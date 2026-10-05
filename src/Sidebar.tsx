@@ -1,11 +1,12 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, ChevronsDownUp, Folder, FolderOpen } from "lucide-react";
-import { FOLDER_COLOR, fileColor } from "./colors";
 import { ROOT } from "./graph";
 import { nameOf, type TreeIndex } from "./tree";
 
 interface Props {
   tree: TreeIndex;
+  /** The graph's node colours, so a row matches its node. */
+  colorOf: (id: string) => string;
   /** The same open folders as the graph, so both always show the same level of detail. */
   expanded: Set<string>;
   selected: string | null;
@@ -30,6 +31,7 @@ const OVERSCAN = 10;
  */
 export const Sidebar = memo(function Sidebar({
   tree,
+  colorOf,
   expanded,
   selected,
   focusRequest,
@@ -122,13 +124,13 @@ export const Sidebar = memo(function Sidebar({
               )}
               {folder ? (
                 open ? (
-                  <FolderOpen size={15} color={FOLDER_COLOR} className="row-icon" />
+                  <FolderOpen size={15} color={colorOf(id)} className="row-icon" />
                 ) : (
-                  <Folder size={15} color={FOLDER_COLOR} className="row-icon" />
+                  <Folder size={15} color={colorOf(id)} className="row-icon" />
                 )
               ) : (
                 <span className="row-icon">
-                  <span className="dot" style={{ background: fileColor(tree.lang.get(id)) }} />
+                  <span className="dot" style={{ color: colorOf(id) }} />
                 </span>
               )}
               <span className="tree-name">{nameOf(id)}</span>

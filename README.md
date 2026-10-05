@@ -1,9 +1,10 @@
 # Repository Visual Analysis
 
 A desktop app that draws a code project as a graph: files and folders are nodes, and the
-imports between them are wires.
+imports between them are wires. The graph opens in 3D, so you can turn it like a globe and
+look at it from any side, and a flat 2D view is one key away.
 
-![The app showing its own source: the React frontend and the Rust backend as two clusters of files linked by their imports](docs/screenshot.png)
+![The app showing its own source in 3D: the TypeScript and UI files of the frontend and the Rust files of the backend as two clusters, each file coloured by its type](docs/screenshot.png)
 
 ## Using it
 
@@ -16,13 +17,32 @@ imports between them are wires.
   to that file, and **Show in folder** and **Copy path** hand the file to your other tools.
 - Press **Ctrl+K** to find a file by name. Picking one opens the folders above it and
   centres the graph on it.
-- Hover a node to trace its wires and see a short summary. The legend shows what each
-  colour means.
+- Hover a node to trace its wires and see a short summary. Arrows on the traced wires point
+  at the imported file.
+- In 3D, **drag** to turn the graph, **scroll** to zoom and **right-drag** to move it. The
+  globe button at the top right (or **R**) turns it slowly on its own. **V** switches between
+  3D and 2D.
 - Zoom with the scroll wheel, the buttons at the bottom right, or **+** and **−**. **F** fits
   the whole graph and **Esc** clears the selection.
 - **Live** in the status bar means the folder is watched: saving a file redraws the graph.
 
-![App.tsx selected: the files it imports fan out around it and are listed in the side panel](docs/selected.png)
+![App.tsx selected: its wires light up with arrows toward the files it imports, which are listed in the side panel](docs/selected.png)
+
+### Colours
+
+The key at the bottom left picks what the colours mean:
+
+- **Type** (the default): TypeScript, Rust, UI components, JavaScript, styles, Python, docs,
+  config and other code each get their own colour, and a folder takes the colour of what it
+  mostly holds. The colours were checked to stay apart for colour-blind readers too.
+- **Folder**: each top-level folder gets its own colour, so you can see which part of the
+  project a file belongs to.
+- **Links**: nodes shade from dark blue to near white by how many wires they have, so the
+  busiest files stand out.
+
+Point at a row of the key to pick those nodes out: everything else fades back.
+
+![Pointing at Rust in the key: the backend's Rust files stay lit and the rest of the graph fades](docs/colors.png)
 
 ## How it stays fast on big repositories
 
@@ -36,10 +56,13 @@ imports between them are wires.
 - **Folders first.** The first view shows one node per folder, with wires summed from the
   files inside. Click a folder to open it, right-click a node to close its folder. Only what
   is open gets drawn.
-- **WebGL drawing.** Sigma.js renders the graph on the GPU.
-- **Layout off the UI thread.** ForceAtlas2 runs in a Web Worker, so the window stays
-  responsive while a big folder is arranged, and clicking several folders quickly only lays
-  out the last state. The explorer only draws the rows in view.
+- **GPU drawing.** In 3D, three.js draws all spheres in one batch, all folder globes in
+  another and all wires in a third, so thousands of nodes cost a handful of draw calls. In 2D,
+  Sigma.js renders the graph with WebGL.
+- **Layout off the UI thread.** Both layouts (d3-force-3d in 3D, ForceAtlas2 in 2D) run in a
+  Web Worker, so the window stays responsive while a big folder is arranged, and clicking
+  several folders quickly only lays out the last state. When a folder opens, the nodes already
+  placed hold still while the new ones spread out. The explorer only draws the rows in view.
 - **Live updates.** The open project is watched, and a burst of edits (a save, a
   `git checkout`) redraws the graph once the changes settle. Churn under ignored folders
   is skipped, and the open folders stay open across the redraw.
@@ -64,12 +87,19 @@ src/                 React frontend
   App.tsx            open project, folder and selection state, keyboard shortcuts
   Welcome.tsx        start screen with recent projects (stored by recent.ts)
   Sidebar.tsx        explorer that mirrors the graph (tree.ts builds its index)
-  GraphView.tsx      Sigma.js renderer, hover tracing and camera controls
-  layout.ts          runs the layout in layout.worker.ts and animates nodes into place
+  Graph3DView.tsx    3D view: hover, clicks and camera controls around scene3d.ts
+  scene3d.ts         the 3D scene: camera, labels, tracing and auto-rotate
+  layers3d.ts        batched three.js drawing of spheres, globes, wires and arrows
+  layout3d.ts        3D force layout, run in layout3d.worker.ts
+  GraphView.tsx      2D view: Sigma.js renderer, hover tracing and camera controls
+  layout.ts          runs the 2D layout in layout.worker.ts and animates nodes into place
   graph.ts           folds files into their nearest open folder and sums wires
+  colors.ts          file types and their colours; coloring.ts builds each colour mode
+  Tooltip.tsx        the hover summary; settings.ts remembers view and colour choices
   SearchBox.tsx      Ctrl+K file search (ranking in search.ts)
   FileDetails.tsx    imports / imported-by panel for the selected file
-  Legend.tsx, StatusBar.tsx, styles.css
+  Legend.tsx         the colour key and colour mode switch
+  StatusBar.tsx, styles.css
 src-tauri/           Rust backend
   src/lib.rs         commands the frontend calls: scan_repository, reveal_in_file_manager
   src/project.rs     keeps file actions inside the open project
