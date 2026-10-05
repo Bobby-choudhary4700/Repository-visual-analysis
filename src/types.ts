@@ -28,3 +28,8 @@ export interface ScanResult {
   edges: Edge[];
   stats: ScanStats;
 }
+
+/** What `scan_repository` returns: the scan plus whether live updates are on. */
+export interface ScanResponse extends ScanResult {
+  watching: boolean;
+}

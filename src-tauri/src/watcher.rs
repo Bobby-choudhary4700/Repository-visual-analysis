@@ -33,6 +33,19 @@ const SKIP: &[&str] = &[
 #[derive(Default)]
 pub struct WatcherState(Mutex<Option<RecommendedWatcher>>);
 
+impl WatcherState {
+    /// Stops watching, so a project that failed to watch is not served by the previous one's watcher.
+    pub fn stop(&self) {
+        if let Ok(mut current) = self.0.lock() {
+            *current = None;
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.0.lock().is_ok_and(|current| current.is_some())
+    }
+}
+
 /// Replaces any existing watch with a recursive watch of `root`.
 pub fn watch(app: &AppHandle, state: &WatcherState, root: &Path) -> Result<(), String> {
     let app = app.clone();

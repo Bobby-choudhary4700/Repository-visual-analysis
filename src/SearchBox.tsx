@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Search } from "lucide-react";
+import { fileColor } from "./colors";
+import { MOD_KEY } from "./platform";
 import { searchFiles } from "./search";
 import type { FileNode } from "./types";
 
@@ -29,16 +32,19 @@ export function SearchBox({ files, onPick }: Props) {
 
   const pick = (path: string) => {
     onPick(path);
+    setQuery("");
     setOpen(false);
     inputRef.current?.blur();
   };
 
   return (
     <div className="search">
+      <Search size={15} className="search-icon" />
       <input
         ref={inputRef}
         value={query}
-        placeholder="Find a file (Ctrl+K)"
+        placeholder={`Find a file  ${MOD_KEY}+K`}
+        aria-label="Find a file"
         spellCheck={false}
         onChange={(e) => {
           setQuery(e.target.value);
@@ -78,6 +84,7 @@ export function SearchBox({ files, onPick }: Props) {
                   pick(file.path);
                 }}
               >
+                <span className="dot" style={{ background: fileColor(file.lang) }} />
                 <span className="name">{file.path.slice(cut + 1)}</span>
                 <span className="dir">{cut > 0 ? file.path.slice(0, cut) : ""}</span>
               </li>

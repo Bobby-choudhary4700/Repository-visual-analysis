@@ -28,23 +28,23 @@ export function parentOf(id: string): string {
   return cut < 0 ? ROOT : trimmed.slice(0, cut + 1);
 }
 
-/** The id that draws `filePath` when only the folders in `expanded` are open. */
-function representative(filePath: string, expanded: Set<string>): string {
-  const parts = filePath.split("/");
-  let prefix = "";
-  for (let i = 0; i < parts.length - 1; i++) {
-    const id = prefix + parts[i] + "/";
-    if (!expanded.has(id)) return id;
-    prefix = id;
-  }
-  return filePath;
-}
-
 export function buildVisibleGraph(
   scan: ScanResult,
   expanded: Set<string>,
 ): { nodes: VisibleNode[]; edges: VisibleEdge[] } {
-  const reps = scan.files.map((f) => representative(f.path, expanded));
+  // The nearest closed folder at or above each folder, or `null` when the folder and all of
+  // its ancestors are open. Worked out once per folder, since files share their folders.
+  const closedAbove = new Map<string, string | null>([[ROOT, null]]);
+  const closedAt = (dir: string): string | null => {
+    const known = closedAbove.get(dir);
+    if (known !== undefined) return known;
+    const above = closedAt(parentOf(dir));
+    const result = above ?? (expanded.has(dir) ? null : dir);
+    closedAbove.set(dir, result);
+    return result;
+  };
+  // Every file is drawn by its nearest closed ancestor, or by itself when all are open.
+  const reps = scan.files.map((f) => closedAt(parentOf(f.path)) ?? f.path);
 
   const nodes = new Map<string, VisibleNode>();
   for (const rep of reps) {

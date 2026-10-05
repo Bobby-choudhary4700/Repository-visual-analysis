@@ -1,73 +1,106 @@
-import { useMemo } from "react";
-import type { ScanResult } from "./types";
+import { useEffect, useMemo, useState } from "react";
+import { Check, Copy, FolderSearch, X } from "lucide-react";
+import { fileColor, langLabel } from "./colors";
+import { absolutePath, dirOf, nameOf } from "./tree";
+import type { FileNode, ScanResult } from "./types";
 
 interface Props {
   scan: ScanResult;
   path: string;
   onSelect: (path: string) => void;
+  onReveal: (path: string) => void;
   onClose: () => void;
 }
 
 /** Side panel for one file: what it imports and what imports it, each one a link. */
-export function FileDetails({ scan, path, onSelect, onClose }: Props) {
-  const { file, imports, importedBy } = useMemo(() => {
+export function FileDetails({ scan, path, onSelect, onReveal, onClose }: Props) {
+  const byPath = useMemo(() => new Map(scan.files.map((f) => [f.path, f])), [scan]);
+  const { imports, importedBy } = useMemo(() => {
     const index = scan.files.findIndex((f) => f.path === path);
-    const imports: string[] = [];
-    const importedBy: string[] = [];
+    const imports: FileNode[] = [];
+    const importedBy: FileNode[] = [];
     for (const { from, to } of scan.edges) {
-      if (from === index) imports.push(scan.files[to].path);
-      if (to === index) importedBy.push(scan.files[from].path);
+      if (from === index) imports.push(scan.files[to]);
+      if (to === index) importedBy.push(scan.files[from]);
     }
-    imports.sort();
-    importedBy.sort();
-    return { file: scan.files[index], imports, importedBy };
+    const byPathName = (a: FileNode, b: FileNode) => a.path.localeCompare(b.path);
+    return { imports: imports.sort(byPathName), importedBy: importedBy.sort(byPathName) };
   }, [scan, path]);
 
+  const [copied, setCopied] = useState(false);
+  useEffect(() => setCopied(false), [path]);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  const file = byPath.get(path);
   if (!file) return null;
-  const cut = path.lastIndexOf("/");
+
+  const copyPath = async () => {
+    if (await copyText(absolutePath(scan.root, path))) setCopied(true);
+  };
 
   return (
-    <aside className="details">
+    <aside className="details" aria-label="File details">
       <div className="details-head">
-        <div>
-          <div className="details-name">{path.slice(cut + 1)}</div>
-          <div className="details-dir">{cut > 0 ? path.slice(0, cut) : "(project root)"}</div>
+        <span className="dot large" style={{ background: fileColor(file.lang) }} />
+        <div className="details-title">
+          <div className="details-name">{nameOf(path)}</div>
+          <div className="details-dir">{dirOf(path) || "project root"}</div>
         </div>
-        <button className="close" onClick={onClose} aria-label="Close">
-          ×
+        <button className="icon-btn" onClick={onClose} title="Close (Esc)" aria-label="Close">
+          <X size={16} />
         </button>
       </div>
-      <div className="details-meta">
-        {file.lang ?? "not parsed"} · {formatSize(file.size)}
+
+      <div className="chips">
+        <span className="chip">{langLabel(file.lang)}</span>
+        <span className="chip">{formatSize(file.size)}</span>
       </div>
-      <FileList title="Imports" paths={imports} onSelect={onSelect} />
-      <FileList title="Imported by" paths={importedBy} onSelect={onSelect} />
+
+      <div className="details-actions">
+        <button className="btn small" onClick={() => onReveal(path)}>
+          <FolderSearch size={14} />
+          Show in folder
+        </button>
+        <button className="btn small" onClick={copyPath}>
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+          {copied ? "Copied" : "Copy path"}
+        </button>
+      </div>
+
+      <FileList title="Imports" files={imports} onSelect={onSelect} />
+      <FileList title="Imported by" files={importedBy} onSelect={onSelect} />
     </aside>
   );
 }
 
 function FileList({
   title,
-  paths,
+  files,
   onSelect,
 }: {
   title: string;
-  paths: string[];
+  files: FileNode[];
   onSelect: (path: string) => void;
 }) {
   return (
-    <section>
+    <section className="details-section">
       <h3>
-        {title} <span className="count">{paths.length}</span>
+        {title} <span className="count">{files.length}</span>
       </h3>
-      {paths.length === 0 ? (
+      {files.length === 0 ? (
         <p className="none">None in this project</p>
       ) : (
         <ul>
-          {paths.map((p) => (
-            <li key={p}>
-              <button className="link" title={p} onClick={() => onSelect(p)}>
-                {p}
+          {files.map((f) => (
+            <li key={f.path}>
+              <button className="dep" title={f.path} onClick={() => onSelect(f.path)}>
+                <span className="dot" style={{ background: fileColor(f.lang) }} />
+                <span className="dep-name">{nameOf(f.path)}</span>
+                <span className="dep-dir">{dirOf(f.path)}</span>
               </button>
             </li>
           ))}
@@ -75,6 +108,24 @@ function FileList({
       )}
     </section>
   );
+}
+
+/** Copies through the Clipboard API, falling back to a hidden textarea where it is unavailable. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    return ok;
+  }
 }
 
 function formatSize(bytes: number): string {
