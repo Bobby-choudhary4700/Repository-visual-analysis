@@ -72,9 +72,11 @@ const PY_QUERY: &str = r#"
 (import_from_statement) @from
 "#;
 
-/// `mod name;` declarations, which point at another file (inline `mod x { }` does not).
+/// `mod name;` declarations, which point at another file (inline `mod x { }` does not),
+/// and `use` paths, expanded in `rust_use_specs`.
 const RS_QUERY: &str = r#"
-(mod_item name: (identifier) @spec !body)
+(mod_item name: (identifier) @mod !body)
+(use_declaration argument: (_) @use)
 "#;
 
 /// Reusable per-thread parser. Returned specifiers are raw text, resolved later.
@@ -105,6 +107,15 @@ impl Extractor {
                 let name = query.capture_names()[capture.index as usize];
                 match (lang, name) {
                     (Lang::Python, _) => python_specs(capture.node, source, &mut specs),
+                    (Lang::Rust, "mod") => {
+                        specs.push(format!("mod {}", text(capture.node, source)))
+                    }
+                    (Lang::Rust, "use") => {
+                        let mut found = Vec::new();
+                        rust_use_specs(capture.node, source, "", &mut found);
+                        let depth = inline_mod_depth(capture.node);
+                        specs.extend(found.into_iter().filter_map(|s| outside_file(s, depth)));
+                    }
                     (_, "spec") => specs.push(text(capture.node, source).to_string()),
                     _ => {}
                 }
@@ -138,6 +149,97 @@ fn python_specs(stmt: Node, source: &[u8], out: &mut Vec<String>) {
         } else {
             out.push(format!("{module}.{name}"));
         }
+    }
+}
+
+/// How many inline `mod … { }` blocks enclose this node. `self` and `super` inside one
+/// are relative to that block, not to the file.
+fn inline_mod_depth(node: Node) -> usize {
+    let mut depth = 0;
+    let mut current = node.parent();
+    while let Some(n) = current {
+        if n.kind() == "mod_item" && n.child_by_field_name("body").is_some() {
+            depth += 1;
+        }
+        current = n.parent();
+    }
+    depth
+}
+
+/// Rewrites a spec written inside `depth` inline modules so it is relative to the file,
+/// or drops it when it points at something declared in this same file.
+fn outside_file(spec: String, depth: usize) -> Option<String> {
+    if depth == 0 {
+        return Some(spec);
+    }
+    let path = spec.strip_prefix("use ")?;
+    if path.starts_with("crate") {
+        return Some(spec);
+    }
+    // Each inline module must be climbed out of before a `super` reaches the file's parent.
+    let supers = path.split("::").take_while(|s| *s == "super").count();
+    if supers <= depth {
+        return None;
+    }
+    Some(format!(
+        "use {}",
+        path.splitn(depth + 1, "::").last().unwrap_or(path)
+    ))
+}
+
+/// Flattens a `use` tree into one `use <path>` spec per leaf, so
+/// `use crate::a::{b, c::d};` yields `use crate::a::b` and `use crate::a::c::d`.
+/// `prefix` is the path accumulated from the enclosing scopes.
+fn rust_use_specs(node: Node, source: &[u8], prefix: &str, out: &mut Vec<String>) {
+    let join = |segment: &str| {
+        if prefix.is_empty() {
+            segment.to_string()
+        } else {
+            format!("{prefix}::{segment}")
+        }
+    };
+    match node.kind() {
+        // `a::b` and `a::{…}` both carry the scope in `path`.
+        "scoped_identifier" | "scoped_use_list" => {
+            let scope = node
+                .child_by_field_name("path")
+                .map_or_else(|| prefix.to_string(), |p| join(text(p, source)));
+            match node.child_by_field_name("name") {
+                Some(name) => out.push(format!("use {}", {
+                    let name = text(name, source);
+                    if scope.is_empty() {
+                        name.to_string()
+                    } else {
+                        format!("{scope}::{name}")
+                    }
+                })),
+                // A `{…}` list; recurse into it with the scope as the new prefix.
+                None => {
+                    if let Some(list) = node.child_by_field_name("list") {
+                        rust_use_specs(list, source, &scope, out);
+                    }
+                }
+            }
+        }
+        "use_list" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                rust_use_specs(child, source, prefix, out);
+            }
+        }
+        "use_as_clause" => {
+            if let Some(path) = node.child_by_field_name("path") {
+                rust_use_specs(path, source, prefix, out);
+            }
+        }
+        // `use a::*;` points at the module itself, whose path is the wildcard's own child.
+        "use_wildcard" => match node.named_child(0) {
+            Some(path) => rust_use_specs(path, source, prefix, out),
+            None if !prefix.is_empty() => out.push(format!("use {prefix}")),
+            None => {}
+        },
+        "identifier" | "crate" | "self" | "super" => out.push(format!("use {}", join(text(node, source)))),
+        _ => {}
     }
 }
 
@@ -195,6 +297,47 @@ mod tests {
         "#;
         let specs = Extractor::new().extract(Lang::Tsx, src);
         assert_eq!(specs, ["../ui/View", "./types"]);
+    }
+
+    #[test]
+    fn rust_forms() {
+        let src = br#"
+            mod config;
+            mod inline { }
+            use crate::net::tcp::Stream;
+            use crate::util::{a, b::c};
+            use super::super::other;
+            use self::local::*;
+            use serde::Serialize as S;
+        "#;
+        let specs = Extractor::new().extract(Lang::Rust, src);
+        assert_eq!(
+            specs,
+            [
+                "mod config",
+                "use crate::net::tcp::Stream",
+                "use crate::util::a",
+                "use crate::util::b::c",
+                "use self::local",
+                "use serde::Serialize",
+                "use super::super::other",
+            ]
+        );
+    }
+
+    #[test]
+    fn rust_inline_module_paths_are_relative_to_it() {
+        let src = br#"
+            mod tests {
+                use super::*;
+                use super::super::sibling::Thing;
+                use crate::other;
+                use tempfile::TempDir;
+            }
+        "#;
+        let specs = Extractor::new().extract(Lang::Rust, src);
+        // `super::*` is this same file, and `tempfile` is an outside crate; neither is a wire.
+        assert_eq!(specs, ["use crate::other", "use super::sibling::Thing"]);
     }
 
     #[test]

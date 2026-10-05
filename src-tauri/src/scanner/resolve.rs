@@ -10,7 +10,7 @@ pub fn resolve(lang: Lang, from: &str, spec: &str, exists: impl Fn(&str) -> bool
     let candidates = match lang {
         Lang::Javascript | Lang::Typescript | Lang::Tsx => js_candidates(from, spec),
         Lang::Python => python_candidates(from, spec),
-        Lang::Rust => rust_candidates(from, spec),
+        Lang::Rust => rust_candidates(from, spec, &exists),
     };
     // Candidates are ordered by priority, so the first file that exists wins.
     candidates.into_iter().find(|c| exists(c)).into_iter().collect()
@@ -76,18 +76,115 @@ fn python_candidates(from: &str, spec: &str) -> Vec<String> {
     out
 }
 
-fn rust_candidates(from: &str, name: &str) -> Vec<String> {
+/// Specs are `mod <name>` or `use <path>`, as `imports::rust_use_specs` writes them.
+fn rust_candidates(from: &str, spec: &str, exists: &impl Fn(&str) -> bool) -> Vec<String> {
+    let Some((kind, rest)) = spec.split_once(' ') else {
+        return Vec::new();
+    };
+    if kind == "mod" {
+        return module_files(&module_dir(from), rest);
+    }
+
+    use_candidates(from, rest, exists).unwrap_or_default()
+}
+
+fn use_candidates(
+    from: &str,
+    path: &str,
+    exists: &impl Fn(&str) -> bool,
+) -> Option<Vec<String>> {
+    let mut segments: Vec<&str> = path.split("::").collect();
+    // A path led by `crate`, `self` or `super` names one module for certain, so when its
+    // last segments name an item rather than a module, that module's own file is the target.
+    // A bare path may instead be an outside crate, which must resolve to nothing, so it only
+    // gets the folders a uniform path could mean.
+    let (bases, rooted) = match *segments.first()? {
+        "crate" => {
+            segments.remove(0);
+            (vec![crate_root(from, exists)?], true)
+        }
+        "self" => {
+            segments.remove(0);
+            (vec![module_dir(from)], true)
+        }
+        // `super::super::x` climbs one module per leading `super`.
+        "super" => {
+            let mut base = module_dir(from);
+            while segments.first() == Some(&"super") {
+                segments.remove(0);
+                base = parent(&base)?.to_string();
+            }
+            (vec![base], true)
+        }
+        // A uniform path (`use some_module::Item;`) names a module beside this one or at
+        // the crate root; anything else is an outside crate and resolves to nothing.
+        _ => {
+            let mut bases = vec![module_dir(from)];
+            if let Some(root) = crate_root(from, exists) {
+                bases.push(root);
+            }
+            (bases, false)
+        }
+    };
+    let mut out = Vec::new();
+    for base in bases {
+        out.extend(module_candidates(&base, &segments, rooted));
+    }
+    Some(out)
+}
+
+/// `a::b::Thing` under `base` may mean the module `a::b::Thing`, or an item inside `a::b`
+/// or `a`, so the longest path is tried first and then its prefixes. When `base` is itself
+/// a module this path is known to live in, its own file is the last resort, for an item
+/// declared directly in it.
+fn module_candidates(base: &str, segments: &[&str], rooted: bool) -> Vec<String> {
+    let mut out = Vec::new();
+    for end in (1..=segments.len()).rev() {
+        let dir = segments[..end - 1]
+            .iter()
+            .fold(base.to_string(), |d, s| child(&d, s));
+        out.extend(module_files(&dir, segments[end - 1]));
+    }
+    if rooted {
+        out.push(child(base, "mod.rs"));
+        if !base.is_empty() {
+            out.push(format!("{base}.rs"));
+        }
+        out.push(child(base, "lib.rs"));
+        out.push(child(base, "main.rs"));
+    }
+    out
+}
+
+/// The two files a module `name` can live in, relative to the folder its parent module owns.
+fn module_files(dir: &str, name: &str) -> Vec<String> {
+    vec![
+        child(dir, &format!("{name}.rs")),
+        child(dir, &format!("{name}/mod.rs")),
+    ]
+}
+
+/// The folder a file's own child modules live in: beside `main.rs`, `lib.rs` and
+/// `mod.rs`, and in a folder named after any other file.
+fn module_dir(from: &str) -> String {
     let folder = dir(from);
     let file = from.rsplit('/').next().unwrap_or(from);
-    // `mod x;` in main.rs, lib.rs or mod.rs looks beside the file; elsewhere in a folder named after it.
-    let base = match file {
+    match file {
         "main.rs" | "lib.rs" | "mod.rs" => folder.to_string(),
         _ => child(folder, file.trim_end_matches(".rs")),
-    };
-    vec![
-        child(&base, &format!("{name}.rs")),
-        child(&base, &format!("{name}/mod.rs")),
-    ]
+    }
+}
+
+/// The nearest ancestor folder holding this file's crate root (`main.rs` or `lib.rs`).
+fn crate_root(from: &str, exists: &impl Fn(&str) -> bool) -> Option<String> {
+    let mut folder = Some(dir(from));
+    while let Some(d) = folder {
+        if exists(&child(d, "main.rs")) || exists(&child(d, "lib.rs")) {
+            return Some(d.to_string());
+        }
+        folder = parent(d);
+    }
+    None
 }
 
 /// Folder part of a root-relative path; `""` for files at the root.
@@ -159,6 +256,35 @@ mod tests {
     #[test]
     fn rust_nested_module() {
         let files = ["src/net/tcp.rs"];
-        assert_eq!(one(Lang::Rust, "src/net.rs", "tcp", &files).as_deref(), Some("src/net/tcp.rs"));
+        assert_eq!(one(Lang::Rust, "src/net.rs", "mod tcp", &files).as_deref(), Some("src/net/tcp.rs"));
+    }
+
+    #[test]
+    fn rust_use_paths() {
+        let files = [
+            "src/main.rs",
+            "src/net/mod.rs",
+            "src/net/tcp.rs",
+            "src/config.rs",
+            "tools/src/lib.rs",
+            "tools/src/fmt.rs",
+        ];
+        let at = |from, spec| one(Lang::Rust, from, spec, &files);
+        // An item inside a module resolves to the module's file.
+        assert_eq!(at("src/main.rs", "use crate::net::tcp::Stream").as_deref(), Some("src/net/tcp.rs"));
+        assert_eq!(at("src/net/tcp.rs", "use crate::config::Config").as_deref(), Some("src/config.rs"));
+        assert_eq!(at("src/net/mod.rs", "use self::tcp").as_deref(), Some("src/net/tcp.rs"));
+        assert_eq!(at("src/net/tcp.rs", "use super::super::config").as_deref(), Some("src/config.rs"));
+        // `crate::` is resolved against the nearest crate root, not the repository root.
+        assert_eq!(at("tools/src/fmt.rs", "use crate::fmt").as_deref(), Some("tools/src/fmt.rs"));
+        // An item declared in the module itself resolves to that module's own file.
+        assert_eq!(at("src/net/tcp.rs", "use super::Listener").as_deref(), Some("src/net/mod.rs"));
+        assert_eq!(at("src/net/tcp.rs", "use crate::Args").as_deref(), Some("src/main.rs"));
+        // A uniform path names a module beside this one.
+        assert_eq!(at("src/net/mod.rs", "use tcp::Stream").as_deref(), Some("src/net/tcp.rs"));
+        // Outside crates and the standard library have no file in the project.
+        assert_eq!(at("src/main.rs", "use serde::Serialize"), None);
+        assert_eq!(at("src/net/tcp.rs", "use serde::Serialize"), None);
+        assert_eq!(at("src/main.rs", "use super::x"), None);
     }
 }

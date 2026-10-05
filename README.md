@@ -18,6 +18,9 @@ imports between them are wires.
   files inside. Click a folder to open it, right-click a node to close its folder. Only what
   is open gets drawn.
 - **WebGL drawing.** Sigma.js renders the graph on the GPU.
+- **Live updates.** The open project is watched, and a burst of edits (a save, a
+  `git checkout`) redraws the graph once the changes settle. Churn under ignored folders
+  is skipped, and the open folders stay open across the redraw.
 
 Measured on a 4-core cloud machine: 12,700 files (8,700 Rust sources) scan in 5.2 s the first
 time and 44 ms with the cache.
@@ -28,7 +31,7 @@ time and 44 ms with the cache.
 | --- | --- |
 | JavaScript / TypeScript / TSX | relative `import`, `export … from`, `require()`, `import()` |
 | Python | `import a.b`, `from .x import y` (relative and absolute) |
-| Rust | `mod name;` declarations |
+| Rust | `mod name;` declarations and `use` paths (`crate::`, `self::`, `super::`) |
 
 Imports of outside packages (npm, pip, crates, the standard library) are not drawn.
 
@@ -41,6 +44,7 @@ src/                 React frontend
   GraphView.tsx      Sigma.js renderer and layout
 src-tauri/           Rust backend
   src/scanner/       walk.rs (file listing), imports.rs (tree-sitter), resolve.rs, cache.rs
+  src/watcher.rs     debounced file watching for live updates
   examples/scan.rs   command-line scan for benchmarking
 ```
 

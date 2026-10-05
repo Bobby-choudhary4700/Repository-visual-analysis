@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { GraphView } from "./GraphView";
 import { buildVisibleGraph } from "./graph";
@@ -10,6 +11,7 @@ export default function App() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const openPath = useRef<string | null>(null);
 
   const openFolder = async () => {
     const path = await open({ directory: true, title: "Choose a project folder" });
@@ -17,7 +19,8 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
-      const result = await invoke<ScanResult>("scan_repository", { path });
+      const result = await invoke<ScanResult>("scan_repository", { path, watch: true });
+      openPath.current = path;
       setScan(result);
       setExpanded(initialExpansion(result));
     } catch (e) {
@@ -26,6 +29,26 @@ export default function App() {
       setBusy(false);
     }
   };
+
+  // The backend watches the open folder and reports once a burst of changes settles.
+  // Rescanning keeps the open folders, so the view stays where the user left it.
+  useEffect(() => {
+    let cancelled = false;
+    const pending = listen("repository-changed", async () => {
+      const path = openPath.current;
+      if (path === null) return;
+      try {
+        const result = await invoke<ScanResult>("scan_repository", { path, watch: false });
+        if (!cancelled) setScan(result);
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      }
+    });
+    return () => {
+      cancelled = true;
+      pending.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, []);
 
   const visible = useMemo(
     () => (scan ? buildVisibleGraph(scan, expanded) : { nodes: [], edges: [] }),

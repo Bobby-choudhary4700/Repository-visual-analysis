@@ -209,7 +209,7 @@ mod tests {
         write(root, "py/sub/thing.py", "");
         write(root, "py/pkg/__init__.py", "");
         write(root, "py/pkg/models.py", "");
-        write(root, "crate/src/main.rs", "mod config;\nmod net;\nmod inline { }");
+        write(root, "crate/src/main.rs", "mod config;\nmod net;\nmod inline { }\nuse crate::net::tcp::Stream;");
         write(root, "crate/src/config.rs", "");
         write(root, "crate/src/net/mod.rs", "mod tcp;");
         write(root, "crate/src/net/tcp.rs", "");
@@ -224,6 +224,7 @@ mod tests {
         let want: Vec<(String, String)> = [
             ("crate/src/main.rs", "crate/src/config.rs"),
             ("crate/src/main.rs", "crate/src/net/mod.rs"),
+            ("crate/src/main.rs", "crate/src/net/tcp.rs"),
             ("crate/src/net/mod.rs", "crate/src/net/tcp.rs"),
             ("py/app.py", "py/helpers.py"),
             ("py/app.py", "py/pkg/models.py"),
