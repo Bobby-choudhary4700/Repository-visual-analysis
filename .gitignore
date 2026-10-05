@@ -147,3 +147,7 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Tauri / Rust build output
+src-tauri/target/
+src-tauri/gen/
