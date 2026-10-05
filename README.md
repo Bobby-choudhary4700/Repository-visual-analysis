@@ -3,7 +3,17 @@
 A desktop app that draws a code project as a graph: files and folders are nodes, and the
 imports between them are wires.
 
-![The app showing its own frontend source](docs/screenshot.png)
+![The app showing its own scanner, with one file selected](docs/screenshot.png)
+
+## Using it
+
+- **Open folder** scans a project. The first view shows its top folders.
+- Click a folder to open it, and right-click any node to close the folder it sits in.
+- Click a file to see what it imports and what imports it. Every entry in that panel is a
+  link that jumps to that file.
+- Press **Ctrl+K** (Cmd+K on macOS) to find a file by name. Picking one opens the folders
+  above it and centres the graph on it.
+- Hover a node to trace its wires.
 
 ## How it stays fast on big repositories
 
@@ -39,7 +49,9 @@ Imports of outside packages (npm, pip, crates, the standard library) are not dra
 
 ```
 src/                 React frontend
-  App.tsx            open folder, expand/collapse state
+  App.tsx            open folder, expand/collapse and selection state
+  SearchBox.tsx      Ctrl+K file search (ranking in search.ts)
+  FileDetails.tsx    imports / imported-by panel for the selected file
   graph.ts           folds files into their nearest open folder and sums wires
   GraphView.tsx      Sigma.js renderer and layout
 src-tauri/           Rust backend

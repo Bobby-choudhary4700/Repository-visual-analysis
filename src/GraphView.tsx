@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import Graph from "graphology";
 import forceAtlas2 from "graphology-layout-forceatlas2";
 import Sigma from "sigma";
+import type { NodeDisplayData, PartialButFor } from "sigma/types";
+import type { Settings } from "sigma/settings";
 import { EdgeArrowProgram } from "sigma/rendering";
 import { ROOT, parentOf, type VisibleEdge, type VisibleNode } from "./graph";
 import type { Lang } from "./types";
@@ -17,13 +19,20 @@ const FOLDER_COLOR = "#a78bfa";
 const OTHER_FILE_COLOR = "#94a3b8";
 const EDGE_COLOR = "#64748b";
 const DIM_COLOR = "#1e293b";
+const SELECTED_COLOR = "#f472b6";
 
 interface Props {
   nodes: VisibleNode[];
   edges: VisibleEdge[];
   langOf: (fileId: string) => Lang | null;
+  /** The selected file, highlighted and centred when it is drawn. */
+  selected: string | null;
+  /** Bumped to centre the camera on `selected` again, e.g. when it is picked twice. */
+  focusRequest: number;
   onExpand: (folderId: string) => void;
   onCollapse: (folderId: string) => void;
+  /** A file was clicked, or `null` when the empty background was. */
+  onSelect: (fileId: string | null) => void;
 }
 
 type Position = { x: number; y: number };
@@ -33,13 +42,15 @@ type Position = { x: number; y: number };
  * collapse: new children start where their folder was, so the layout settles locally
  * instead of reshuffling the whole picture.
  */
-export function GraphView({ nodes, edges, langOf, onExpand, onCollapse }: Props) {
+export function GraphView({ nodes, edges, langOf, selected, focusRequest, onExpand, onCollapse, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
   const graphRef = useRef(new Graph({ type: "directed" }));
   const hoveredRef = useRef<string | null>(null);
-  const handlersRef = useRef({ onExpand, onCollapse });
-  handlersRef.current = { onExpand, onCollapse };
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const handlersRef = useRef({ onExpand, onCollapse, onSelect });
+  handlersRef.current = { onExpand, onCollapse, onSelect };
 
   // Create the renderer once.
   useEffect(() => {
@@ -49,17 +60,22 @@ export function GraphView({ nodes, edges, langOf, onExpand, onCollapse }: Props)
       edgeProgramClasses: { arrow: EdgeArrowProgram },
       labelColor: { color: "#e2e8f0" },
       labelRenderedSizeThreshold: 6,
+      defaultDrawNodeHover: drawHover,
       zIndex: true,
+      // Hovering traces a node's wires; with nothing hovered, the selected file's wires show.
       nodeReducer: (node, data) => {
-        const hovered = hoveredRef.current;
-        if (!hovered || node === hovered || graph.areNeighbors(node, hovered)) {
-          return { ...data, zIndex: 1 };
+        const sel = selectedRef.current;
+        const styled = node === sel ? { ...data, color: SELECTED_COLOR, size: data.size * 1.5, forceLabel: true } : data;
+        const focus = focusNode(graph);
+        if (!focus || node === focus || graph.areNeighbors(node, focus)) {
+          return { ...styled, zIndex: 1 };
         }
-        return { ...data, color: DIM_COLOR, label: "", zIndex: 0 };
+        return { ...styled, color: DIM_COLOR, label: "", zIndex: 0 };
       },
       edgeReducer: (edge, data) => {
-        const hovered = hoveredRef.current;
-        if (!hovered || graph.hasExtremity(edge, hovered)) return data;
+        const focus = focusNode(graph);
+        if (!focus) return data;
+        if (graph.hasExtremity(edge, focus)) return { ...data, color: "#cbd5e1" };
         return { ...data, hidden: true };
       },
     });
@@ -67,8 +83,11 @@ export function GraphView({ nodes, edges, langOf, onExpand, onCollapse }: Props)
     sigma.on("clickNode", ({ node }) => {
       if (graph.getNodeAttribute(node, "kind") === "folder") {
         handlersRef.current.onExpand(node);
+      } else {
+        handlersRef.current.onSelect(node);
       }
     });
+    sigma.on("clickStage", () => handlersRef.current.onSelect(null));
     sigma.on("rightClickNode", ({ node, event }) => {
       event.original.preventDefault();
       const parent = parentOf(node);
@@ -84,6 +103,10 @@ export function GraphView({ nodes, edges, langOf, onExpand, onCollapse }: Props)
     });
 
     sigmaRef.current = sigma;
+    function focusNode(g: Graph): string | null {
+      const candidate = hoveredRef.current ?? selectedRef.current;
+      return candidate && g.hasNode(candidate) ? candidate : null;
+    }
     return () => {
       sigma.kill();
       sigmaRef.current = null;
@@ -130,6 +153,21 @@ export function GraphView({ nodes, edges, langOf, onExpand, onCollapse }: Props)
     sigmaRef.current?.refresh();
   }, [nodes, edges, langOf]);
 
+  // Declared after the sync above so a newly revealed file is in the graph before the camera moves.
+  useEffect(() => {
+    const sigma = sigmaRef.current;
+    if (!sigma) return;
+    sigma.refresh({ skipIndexation: true });
+    if (focusRequest === 0 || !selected || !graphRef.current.hasNode(selected)) return;
+    const target = sigma.getNodeDisplayData(selected);
+    if (target) {
+      sigma.getCamera().animate(
+        { x: target.x, y: target.y, ratio: Math.min(sigma.getCamera().ratio, 0.6) },
+        { duration: 400 },
+      );
+    }
+  }, [selected, focusRequest]);
+
   return (
     <div
       ref={containerRef}
@@ -164,6 +202,31 @@ function hash(text: string): number {
   let h = 2166136261;
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
   return h >>> 0;
+}
+
+/** Sigma's default hover label is a white box, unreadable with light label text on a dark theme. */
+function drawHover(
+  context: CanvasRenderingContext2D,
+  data: PartialButFor<NodeDisplayData, "x" | "y" | "size" | "label" | "color">,
+  settings: Settings,
+): void {
+  const size = settings.labelSize;
+  context.font = `${settings.labelWeight} ${size}px ${settings.labelFont}`;
+  const label = data.label ?? "";
+  const width = context.measureText(label).width;
+  const pad = 4;
+  context.fillStyle = "#1e293b";
+  context.strokeStyle = "#475569";
+  context.beginPath();
+  context.roundRect(data.x + data.size + 2, data.y - size / 2 - pad, width + pad * 2, size + pad * 2, 4);
+  context.fill();
+  context.stroke();
+  context.beginPath();
+  context.arc(data.x, data.y, data.size + 2, 0, Math.PI * 2);
+  context.strokeStyle = "#e2e8f0";
+  context.stroke();
+  context.fillStyle = "#f8fafc";
+  context.fillText(label, data.x + data.size + 2 + pad, data.y + size / 3);
 }
 
 function colorFor(lang: Lang | null): string {

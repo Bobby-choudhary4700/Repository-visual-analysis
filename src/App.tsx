@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { FileDetails } from "./FileDetails";
 import { GraphView } from "./GraphView";
-import { buildVisibleGraph } from "./graph";
+import { SearchBox } from "./SearchBox";
+import { ROOT, buildVisibleGraph, parentOf } from "./graph";
 import type { ScanResult } from "./types";
 
 export default function App() {
@@ -11,6 +13,8 @@ export default function App() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [focusRequest, setFocusRequest] = useState(0);
   const openPath = useRef<string | null>(null);
 
   const openFolder = async () => {
@@ -23,6 +27,7 @@ export default function App() {
       openPath.current = path;
       setScan(result);
       setExpanded(initialExpansion(result));
+      setSelected(null);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -39,7 +44,10 @@ export default function App() {
       if (path === null) return;
       try {
         const result = await invoke<ScanResult>("scan_repository", { path, watch: false });
-        if (!cancelled) setScan(result);
+        if (cancelled) return;
+        setScan(result);
+        // Drop the selection if its file was deleted.
+        setSelected((sel) => (sel && result.files.some((f) => f.path === sel) ? sel : null));
       } catch (e) {
         if (!cancelled) setError(String(e));
       }
@@ -65,6 +73,18 @@ export default function App() {
     setExpanded((prev) => new Set(prev).add(folder));
   }, []);
 
+  // Selecting from search or the details panel opens every folder above the file
+  // and centres the camera on it.
+  const reveal = useCallback((path: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (let dir = parentOf(path); dir !== ROOT; dir = parentOf(dir)) next.add(dir);
+      return next;
+    });
+    setSelected(path);
+    setFocusRequest((n) => n + 1);
+  }, []);
+
   // Collapsing a folder also closes every folder inside it.
   const collapse = useCallback((folder: string) => {
     setExpanded((prev) => new Set([...prev].filter((id) => !id.startsWith(folder))));
@@ -81,6 +101,7 @@ export default function App() {
             <button onClick={() => setExpanded(initialExpansion(scan))} disabled={busy}>
               Collapse all
             </button>
+            <SearchBox files={scan.files} onPick={reveal} />
             <span className="root" title={scan.root}>
               {scan.root}
             </span>
@@ -94,14 +115,30 @@ export default function App() {
       {error && <div className="error">{error}</div>}
       {scan ? (
         <>
-          <GraphView
-            nodes={visible.nodes}
-            edges={visible.edges}
-            langOf={langOf}
-            onExpand={expand}
-            onCollapse={collapse}
-          />
-          <footer>Click a folder to open it. Right-click a node to close its folder. Hover to trace its wires.</footer>
+          <div className="main">
+            <GraphView
+              nodes={visible.nodes}
+              edges={visible.edges}
+              langOf={langOf}
+              selected={selected}
+              focusRequest={focusRequest}
+              onExpand={expand}
+              onCollapse={collapse}
+              onSelect={setSelected}
+            />
+            {selected && (
+              <FileDetails
+                scan={scan}
+                path={selected}
+                onSelect={reveal}
+                onClose={() => setSelected(null)}
+              />
+            )}
+          </div>
+          <footer>
+            Click a folder to open it and a file to see its imports. Right-click a node to close its
+            folder. Hover to trace its wires.
+          </footer>
         </>
       ) : (
         <div className="empty">Open a project folder to see its files and the imports that connect them.</div>
