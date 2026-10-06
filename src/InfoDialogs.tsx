@@ -40,6 +40,7 @@ const SHORTCUTS: { group: string; keys: [string, string][] }[] = [
       [`${MOD_KEY} O`, "Open a folder"],
       [`${MOD_KEY} Shift N`, "New window"],
       [`${MOD_KEY} W`, "Close the window"],
+      [`${MOD_KEY} Shift X`, "Back to the explorer"],
       [`${MOD_KEY} Shift M`, "Mermaid viewer"],
       [`${MOD_KEY} Shift E`, "Export manager"],
       [`${MOD_KEY} ,`, "Settings"],

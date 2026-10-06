@@ -3,6 +3,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use tauri::window::Color;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 /// The app's name, shown as the title of a window without a project.
@@ -30,6 +31,8 @@ pub fn open(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .min_inner_size(720.0, 480.0)
         // Frameless, like the first window: the UI draws the title bar and its buttons.
         .decorations(false)
+        // The app's dark background until the page paints, never a white flash.
+        .background_color(Color(11, 17, 32, 255))
         .build()
 }
 

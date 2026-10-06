@@ -2225,3 +2225,7 @@ button:focus-visible {
 .settings-row .segmented button {
   white-space: nowrap;
 }
+
+.mermaid-viewer[hidden] {
+  display: none;
+}

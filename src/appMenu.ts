@@ -18,6 +18,7 @@ export type Action =
   | "export-manager"
   | "about"
   | "shortcuts"
+  | "explorer"
   | "close-folder"
   | "new-window"
   | "close-window"

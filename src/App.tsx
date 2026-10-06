@@ -98,10 +98,13 @@ export default function App() {
   /** The legend entry being pointed at, whose nodes stay lit. */
   const [legendHover, setLegendHover] = useState<string | null>(null);
   /**
-   * The Mermaid viewer's starting text while it is open, or `null` when it is closed. A
-   * new `rev` starts the viewer afresh, as when a file is opened into it.
+   * The Mermaid viewer's starting text, or `null` until it is first opened. Once open it
+   * stays mounted, hidden while the explorer shows, so switching back finds its text,
+   * drawing and zoom as they were. A new `rev` starts it afresh, as when a file is opened.
    */
   const [mermaidDoc, setMermaidDoc] = useState<{ text: string; name: string; rev?: number } | null>(null);
+  /** Whether the Mermaid viewer is in front, rather than the explorer and graph. */
+  const [mermaidShown, setMermaidShown] = useState(false);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [reopenLast, setReopenLast] = useState(() => loadFlag("rva.reopenLast", false));
   const [dialog, setDialog] = useState<DialogKind | null>(null);
@@ -113,9 +116,7 @@ export default function App() {
   const dialogOpenRef = useRef(false);
   dialogOpenRef.current = dialog !== null;
   const mermaidOpenRef = useRef(false);
-  /** What the viewer held when it was last closed, so reopening it picks up there. */
-  const mermaidDraft = useRef({ text: "", name: "diagram" });
-  mermaidOpenRef.current = mermaidDoc !== null;
+  mermaidOpenRef.current = mermaidShown;
   const openPath = useRef<string | null>(null);
   const graphApi = useRef<GraphHandle | null>(null);
 
@@ -130,6 +131,8 @@ export default function App() {
       setSelected(null);
       setTreeHover(null);
       setRecent(rememberRecent(path));
+      // The project comes to the front, in place of the Mermaid viewer.
+      setMermaidShown(false);
     } catch (e) {
       setError(String(e));
       // A recent project that no longer opens is dropped from the list.
@@ -202,6 +205,12 @@ export default function App() {
     };
   }, [openProject]);
 
+  // Brings the Mermaid viewer to the front, as it was left, or empty the first time.
+  const showMermaid = useCallback(() => {
+    setMermaidDoc((doc) => doc ?? { text: "", name: "diagram" });
+    setMermaidShown(true);
+  }, []);
+
   // Back to the home screen: the project closes and stops being watched.
   const goHome = useCallback(() => {
     openPath.current = null;
@@ -210,6 +219,7 @@ export default function App() {
     setSelected(null);
     setTreeHover(null);
     setError(null);
+    setMermaidShown(false);
     invoke("close_project").catch(() => {});
   }, []);
 
@@ -279,7 +289,7 @@ export default function App() {
   // in a plain browser the viewer opens and its Open file button does the picking.
   const openMermaidFile = useCallback(async () => {
     if (!isTauri()) {
-      setMermaidDoc((doc) => doc ?? mermaidDraft.current);
+      showMermaid();
       return;
     }
     try {
@@ -290,10 +300,11 @@ export default function App() {
         name: file.name.replace(/\.[^.]+$/, "") || "diagram",
         rev: Date.now(),
       });
+      setMermaidShown(true);
     } catch (e) {
       setError(String(e));
     }
-  }, []);
+  }, [showMermaid]);
 
   const changePrefs = useCallback(
     (change: Partial<Preferences>) => {
@@ -331,7 +342,7 @@ export default function App() {
         case "mermaid-open-file":
           return void openMermaidFile();
         case "mermaid-viewer":
-          return setMermaidDoc((doc) => doc ?? mermaidDraft.current);
+          return showMermaid();
         case "settings":
           return setDialog("settings");
         case "export-manager":
@@ -340,6 +351,17 @@ export default function App() {
           return setDialog("about");
         case "shortcuts":
           return setDialog("shortcuts");
+        case "explorer":
+          // Back to the open project (or the home screen) from the viewer or a dialog;
+          // pressed again while already there, it shows or hides the file tree.
+          if (mermaidOpenRef.current || dialogOpenRef.current) {
+            setMermaidShown(false);
+            setDialog(null);
+            setSidebarOpen(true);
+          } else if (openPath.current !== null) {
+            setSidebarOpen((open) => !open);
+          }
+          return;
         case "close-folder":
           if (openPath.current !== null) goHome();
           return;
@@ -411,7 +433,7 @@ export default function App() {
         }
       }
     },
-    [chooseFolder, openProject, openMermaidFile, goHome, openNewWindow, toggleNoise],
+    [chooseFolder, openProject, openMermaidFile, showMermaid, goHome, openNewWindow, toggleNoise],
   );
 
   // The menu bar's items arrive as events for this window.
@@ -437,6 +459,7 @@ export default function App() {
         runAction(action);
       };
       if (mod && e.shiftKey && key === "n") return command("new-window");
+      if (mod && e.shiftKey && key === "x") return command("explorer");
       // The Mermaid viewer and the dialogs have their own keys while they are open.
       if (mermaidOpenRef.current || dialogOpenRef.current) return;
       if (mod && e.key === ",") return command("settings");
@@ -611,7 +634,8 @@ export default function App() {
       };
       const stem = `${fileStem(title)}${selected ? `-${fileStem(nameOf(selected))}` : ""}-graph`;
       if (kind === "viewer") {
-        setMermaidDoc({ text: buildMermaid(input), name: stem });
+        setMermaidDoc({ text: buildMermaid(input), name: stem, rev: Date.now() });
+        setMermaidShown(true);
         return;
       }
       // Mermaid refuses big charts by default, so say so before someone pastes one.
@@ -701,11 +725,9 @@ export default function App() {
               ? "settings"
               : dialog === "exports"
                 ? "exports"
-                : mermaidDoc
+                : mermaidShown
                   ? "mermaid"
-                  : scan
-                    ? null
-                    : "home"
+                  : "explorer"
           }
           onAction={runAction}
         />
@@ -858,7 +880,7 @@ export default function App() {
               onOpen={() => void chooseFolder()}
               onOpenRecent={(path) => void openProject(path)}
               onForget={(path) => setRecent(forgetRecent(path))}
-              onOpenMermaid={() => setMermaidDoc(mermaidDraft.current)}
+              onOpenMermaid={showMermaid}
             />
           )}
 
@@ -867,10 +889,8 @@ export default function App() {
               key={mermaidDoc.rev ?? 0}
               initialText={mermaidDoc.text}
               name={mermaidDoc.name}
-              onClose={(text, name) => {
-                mermaidDraft.current = { text, name };
-                setMermaidDoc(null);
-              }}
+              hidden={!mermaidShown}
+              onClose={() => setMermaidShown(false)}
               onNotice={setNotice}
             />
           )}
