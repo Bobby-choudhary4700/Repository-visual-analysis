@@ -14,7 +14,10 @@
       {
         "title": "Repository Visual Analysis",
         "width": 1280,
-        "height": 800
+        "height": 800,
+        "minWidth": 720,
+        "minHeight": 480,
+        "decorations": false
       }
     ],
     "security": {

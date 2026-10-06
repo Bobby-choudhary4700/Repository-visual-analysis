@@ -46,10 +46,17 @@ look at it from any side, and a flat 2D view is one key away.
 - The **Export manager** (Export menu, or Ctrl+Shift+E) lists every graph and diagram saved,
   newest first and in every window, with **Show in folder**. Files are only shown in the
   file manager, never opened.
-- The **menu bar** has File (new window, open folder, open recent, Mermaid, close folder,
-  close window, exit), Edit, View (explorer, 3D or 2D, colours, zoom, theme, full screen),
-  Export, Window and Help (keyboard shortcuts, About). **Settings** (Ctrl+,) holds the theme
-  (dark, light or match the system), the graph choices and start-up behaviour.
+- The window has its own **title bar** instead of the system frame: the app icon and the
+  menus on the left, file search in the middle, and the explorer and details panel
+  switches with minimize, maximize and close on the right. Drag its empty parts to move
+  the window and double-click them to maximize. The menus are File (new window, open
+  folder, open recent, Mermaid, close folder, close window, exit), Edit, View (panels,
+  3D or 2D, colours, zoom, theme, full screen), Export, Window and Help (keyboard
+  shortcuts, About). On macOS the same menus are also in the screen's menu bar.
+- The **activity bar** down the left edge has Home, the Mermaid viewer, the export
+  manager and Open folder, with **Settings** (Ctrl+,) at the bottom; each names itself on
+  hover. Settings holds the theme (dark, light or match the system), the graph choices
+  and start-up behaviour.
 
 ![App.tsx selected: its wires light up with arrows toward the files it imports, which are listed in the side panel](docs/selected.png)
 
@@ -129,12 +136,14 @@ src/                 React frontend
   ExportMenu.tsx     the export menu; exportGraph.ts builds the SVG, PNG and Mermaid
   ExportManager.tsx  the list of past exports (exports.ts talks to history.rs)
   SettingsDialog.tsx Settings; theme.ts applies the theme; InfoDialogs.tsx About and shortcuts
+  TitleBar.tsx       the frameless window's title bar; MenuBar.tsx draws appMenu.ts's menus
+  ActivityBar.tsx    the icon strip on the left edge
   StatusBar.tsx, styles.css
 src-tauri/           Rust backend
   src/lib.rs         commands the frontend calls: scan_repository, reveal_in_file_manager
   src/export.rs      save_export: the save dialog and file write for exports
   src/history.rs     the export manager's list, kept in the app data folder
-  src/menu.rs        the menu bar; most items are sent to the window as a `menu` event
+  src/menu.rs        the macOS menu bar (items reach the window as a `menu` event), links, exit
   src/project.rs     keeps file actions inside the open project
   src/scanner/       walk.rs (file listing), imports.rs (tree-sitter), resolve.rs,
                      aliases.rs (tsconfig paths), cache.rs

@@ -27,6 +27,9 @@ pub fn open(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     WebviewWindowBuilder::new(app, label, WebviewUrl::default())
         .title(APP_TITLE)
         .inner_size(1280.0, 800.0)
+        .min_inner_size(720.0, 480.0)
+        // Frameless, like the first window: the UI draws the title bar and its buttons.
+        .decorations(false)
         .build()
 }
 

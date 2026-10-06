@@ -97,13 +97,17 @@ async fn open_new_window(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // The native menu bar only on macOS, where it sits in the screen's top bar; elsewhere
+    // the frameless window draws its own menus in its title bar.
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(menu::build);
+    builder
         .plugin(tauri_plugin_dialog::init())
         .manage(WatcherState::default())
         .manage(ProjectState::default())
         .manage(history::ExportHistory::default())
         .manage(menu::RecentMenu::default())
-        .menu(menu::build)
         .on_menu_event(|app, event| menu::handle(app, event.id().as_ref()))
         .on_window_event(|window, event| {
             // A closed window's project is forgotten and no longer watched.
@@ -124,7 +128,9 @@ pub fn run() {
             history::forget_export,
             history::clear_exports,
             history::reveal_export,
-            menu::set_recent_menu
+            menu::set_recent_menu,
+            menu::open_link,
+            menu::exit_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
