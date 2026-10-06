@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   Check,
@@ -12,6 +12,7 @@ import {
   Maximize,
   Orbit,
   PanelLeft,
+  SquarePlus,
   TriangleAlert,
   Upload,
   X,
@@ -102,23 +103,27 @@ export default function App() {
   }, [openProject]);
 
   // The backend watches the open folder and reports once a burst of changes settles.
+  // Each window has its own project, so only this window's changes are listened to.
   // Rescanning keeps the open folders, so the view stays where the user left it.
   useEffect(() => {
     let cancelled = false;
-    const pending = listen("repository-changed", async () => {
-      const path = openPath.current;
-      if (path === null) return;
-      try {
-        const result = await invoke<ScanResponse>("scan_repository", { path, watch: false });
-        // Ignore a result for a project that was replaced while it was scanning.
-        if (cancelled || openPath.current !== path) return;
-        setScan(result);
-        // Drop the selection if its file was deleted.
-        setSelected((sel) => (sel && result.files.some((f) => f.path === sel) ? sel : null));
-      } catch (e) {
-        if (!cancelled) setError(String(e));
-      }
-    });
+    // Started inside a promise, so outside Tauri the missing window is a rejection, not a crash.
+    const pending = Promise.resolve().then(() =>
+      getCurrentWebviewWindow().listen("repository-changed", async () => {
+        const path = openPath.current;
+        if (path === null) return;
+        try {
+          const result = await invoke<ScanResponse>("scan_repository", { path, watch: false });
+          // Ignore a result for a project that was replaced while it was scanning.
+          if (cancelled || openPath.current !== path) return;
+          setScan(result);
+          // Drop the selection if its file was deleted.
+          setSelected((sel) => (sel && result.files.some((f) => f.path === sel) ? sel : null));
+        } catch (e) {
+          if (!cancelled) setError(String(e));
+        }
+      }),
+    );
     return () => {
       cancelled = true;
       pending.then((unlisten) => unlisten()).catch(() => {});
@@ -204,10 +209,23 @@ export default function App() {
     }
   }, []);
 
+  const openNewWindow = useCallback(async () => {
+    try {
+      await invoke("open_new_window");
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
+      if (mod && e.shiftKey && key === "n") {
+        e.preventDefault();
+        void openNewWindow();
+        return;
+      }
       if (mod && key === "o") {
         e.preventDefault();
         void chooseFolder();
@@ -230,7 +248,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [chooseFolder, toggleNoise]);
+  }, [chooseFolder, openNewWindow, toggleNoise]);
 
   useEffect(() => saveSetting("rva.viewMode", viewMode), [viewMode]);
   useEffect(() => saveSetting("rva.colorMode", colorMode), [colorMode]);
@@ -420,6 +438,13 @@ export default function App() {
         >
           <FolderOpen size={16} />
           Open folder
+        </button>
+        <button
+          className="icon-btn"
+          onClick={() => void openNewWindow()}
+          title={`Open a new window for another project (${MOD_KEY}+Shift+N)`}
+        >
+          <SquarePlus size={18} />
         </button>
       </header>
 

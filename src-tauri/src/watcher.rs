@@ -1,18 +1,19 @@
-//! Watches the open project and tells the frontend when its files change.
+//! Watches the project open in each window and tells that window when its files change.
 //!
 //! Events are debounced, because one save from an editor or one `git checkout`
 //! produces many of them. The frontend answers by scanning again, which is cheap:
 //! only the files that actually changed are re-parsed.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Mutex;
 use std::time::Duration;
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, EventTarget};
 
-/// Emitted to the frontend once a burst of file changes has settled.
+/// Emitted to the window whose project changed, once a burst of file changes has settled.
 pub const CHANGED_EVENT: &str = "repository-changed";
 
 /// How long the changes must stay quiet before the frontend is told.
@@ -28,30 +29,47 @@ const SKIP: &[&str] = &[
     "__pycache__",
 ];
 
-/// Holds the watcher for the open project. Dropping it stops the watch, which in
-/// turn ends the debounce thread, so opening another project cleans up the old one.
+/// Holds the watcher for each window's project, by window label. Dropping a watcher
+/// stops the watch, which in turn ends its debounce thread, so opening another project
+/// or closing the window cleans up the old one.
 #[derive(Default)]
-pub struct WatcherState(Mutex<Option<RecommendedWatcher>>);
+pub struct WatcherState(Mutex<HashMap<String, RecommendedWatcher>>);
 
 impl WatcherState {
-    /// Stops watching, so a project that failed to watch is not served by the previous one's watcher.
-    pub fn stop(&self) {
-        if let Ok(mut current) = self.0.lock() {
-            *current = None;
+    /// Stops a window's watch, so a project that failed to watch is not served by the
+    /// previous one's watcher, and a closed window's project is no longer watched.
+    pub fn stop(&self, window: &str) {
+        if let Ok(mut watchers) = self.0.lock() {
+            watchers.remove(window);
         }
     }
 
-    pub fn is_active(&self) -> bool {
-        self.0.lock().is_ok_and(|current| current.is_some())
+    pub fn is_active(&self, window: &str) -> bool {
+        self.0
+            .lock()
+            .is_ok_and(|watchers| watchers.contains_key(window))
     }
 }
 
-/// Replaces any existing watch with a recursive watch of `root`.
-pub fn watch(app: &AppHandle, state: &WatcherState, root: &Path) -> Result<(), String> {
+/// Replaces the window's watch, if any, with a recursive watch of `root` whose
+/// changes are reported to that window only.
+pub fn watch(
+    app: &AppHandle,
+    state: &WatcherState,
+    window: &str,
+    root: &Path,
+) -> Result<(), String> {
     let app = app.clone();
-    let watcher = spawn_watch(root, move || app.emit(CHANGED_EVENT, ()).is_ok())?;
+    let target = EventTarget::webview_window(window);
+    let watcher = spawn_watch(root, move || {
+        app.emit_to(target.clone(), CHANGED_EVENT, ()).is_ok()
+    })?;
     // Replacing the stored watcher drops the previous one, stopping the old watch.
-    *state.0.lock().map_err(|e| e.to_string())? = Some(watcher);
+    state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(window.to_owned(), watcher);
     Ok(())
 }
 
