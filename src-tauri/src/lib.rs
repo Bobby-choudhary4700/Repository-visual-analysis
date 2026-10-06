@@ -1,3 +1,4 @@
+mod export;
 mod project;
 pub mod scanner;
 mod watcher;
@@ -70,7 +71,8 @@ pub fn run() {
         .manage(ProjectState::default())
         .invoke_handler(tauri::generate_handler![
             scan_repository,
-            reveal_in_file_manager
+            reveal_in_file_manager,
+            export::save_export
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

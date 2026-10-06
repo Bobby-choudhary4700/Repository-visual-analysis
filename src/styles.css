@@ -509,6 +509,72 @@ button:focus-visible {
   padding: 4px;
 }
 
+.controls-sep {
+  height: 1px;
+  margin: 2px 4px;
+  background: var(--border);
+}
+
+.export-wrap {
+  position: relative;
+}
+
+.export-menu {
+  right: calc(100% + 10px);
+  bottom: -4px;
+  width: 264px;
+  padding: 4px;
+  animation: fade 0.12s ease;
+}
+
+.export-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.export-item svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.export-item:hover,
+.export-item:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.export-label {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.export-hint {
+  display: block;
+  margin-top: 1px;
+  font-size: 11.5px;
+}
+
+.export-note {
+  margin: 4px 8px 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
 .view-switch {
   top: 14px;
   right: 14px;
@@ -1115,6 +1181,21 @@ button:focus-visible {
   color: var(--danger-text);
   transform: translateX(-50%);
   animation: rise 0.15s ease-out;
+}
+
+.toast.info {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.toast.info > svg {
+  flex-shrink: 0;
+  color: var(--live);
+}
+
+.toast.info .icon-btn {
+  color: var(--text-muted);
 }
 
 .toast span {
