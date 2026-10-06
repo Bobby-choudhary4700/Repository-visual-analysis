@@ -6,18 +6,12 @@ import { open } from "@tauri-apps/plugin-dialog";
 import {
   Check,
   Crosshair,
-  FolderOpen,
   Funnel,
-  House,
   LoaderCircle,
   Maximize,
   Orbit,
-  PanelLeft,
-  Settings,
-  SquarePlus,
   TriangleAlert,
   Upload,
-  Workflow,
   X,
   ZoomIn,
   ZoomOut,
@@ -33,6 +27,8 @@ import {
   svgToPng,
   type ExportInput,
 } from "./exportGraph";
+import { ActivityBar } from "./ActivityBar";
+import { buildMenus, type Action } from "./appMenu";
 import { ExportManager } from "./ExportManager";
 import { FileDetails } from "./FileDetails";
 import { FolderDetails } from "./FolderDetails";
@@ -42,7 +38,6 @@ import { Graph3DView } from "./Graph3DView";
 import { GraphView, type GraphHandle } from "./GraphView";
 import { AboutDialog, ShortcutsDialog } from "./InfoDialogs";
 import { Legend } from "./Legend";
-import { Logo } from "./Logo";
 import { MermaidViewer } from "./MermaidViewer";
 import { mermaidSource } from "./mermaidRender";
 import { isNoise, withoutNoise } from "./noise";
@@ -55,9 +50,11 @@ import { loadChoice, loadFlag, saveSetting } from "./settings";
 import { SettingsDialog, type Preferences, type ViewMode } from "./SettingsDialog";
 import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
+import { TitleBar } from "./TitleBar";
 import { THEME_KEY, applyTheme, isTheme, loadTheme, saveTheme, type Theme } from "./theme";
 import type { NodeInfo } from "./Tooltip";
 import { baseName, buildTreeIndex, nameOf } from "./tree";
+import { closeWindow, minimizeWindow, toggleFullscreen, toggleMaximize, watchMaximized } from "./windowControls";
 import type { ScanResponse, ScanResult } from "./types";
 import { Welcome } from "./Welcome";
 
@@ -66,45 +63,9 @@ const VIEW_MODES: readonly ViewMode[] = ["3d", "2d"];
 /** The windows the app opens over the graph, from the menu bar or the top bar. */
 type DialogKind = "settings" | "exports" | "about" | "shortcuts";
 
-/**
- * What the menu bar, the shortcuts and the buttons ask for. The menu bar's ids are these
- * names (see src-tauri/src/menu.rs).
- */
-type Action =
-  | "open-folder"
-  | "open-recent"
-  | "clear-recent"
-  | "mermaid-open-file"
-  | "mermaid-viewer"
-  | "settings"
-  | "export-manager"
-  | "about"
-  | "shortcuts"
-  | "close-folder"
-  | "new-window"
-  | "find"
-  | "toggle-explorer"
-  | "view-3d"
-  | "view-2d"
-  | "color-type"
-  | "color-folder"
-  | "color-links"
-  | "auto-rotate"
-  | "hide-noise"
-  | "zoom-in"
-  | "zoom-out"
-  | "fit"
-  | "theme-dark"
-  | "theme-light"
-  | "theme-system"
-  | "export-png"
-  | "export-svg"
-  | "export-mermaid"
-  | "copy-mermaid"
-  | "export-viewer";
 
 /**
- * A shortcut can reach the page and the menu bar both, depending on the system; the
+ * On macOS a shortcut can reach the page and the native menu bar both, depending on the system; the
  * same action twice within this long is taken as one.
  */
 const REPEAT_MS = 400;
@@ -144,6 +105,11 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [reopenLast, setReopenLast] = useState(() => loadFlag("rva.reopenLast", false));
   const [dialog, setDialog] = useState<DialogKind | null>(null);
+  /** Whether the selection's details show on the right; the title bar switches it. */
+  const [detailsOpen, setDetailsOpen] = useState(() => loadFlag("rva.detailsOpen", true));
+  const [maximized, setMaximized] = useState(false);
+  useEffect(() => watchMaximized(setMaximized), []);
+  useEffect(() => saveSetting("rva.detailsOpen", detailsOpen), [detailsOpen]);
   const dialogOpenRef = useRef(false);
   dialogOpenRef.current = dialog !== null;
   const mermaidOpenRef = useRef(false);
@@ -379,6 +345,30 @@ export default function App() {
           return;
         case "new-window":
           return void openNewWindow();
+        case "close-window":
+          return void closeWindow();
+        case "exit":
+          return void invoke("exit_app").catch(() => closeWindow());
+        case "minimize":
+          return void minimizeWindow();
+        case "maximize":
+          return void toggleMaximize();
+        case "fullscreen":
+          return void toggleFullscreen();
+        case "github":
+        case "report-issue":
+          return void invoke("open_link", { which: action }).catch((e) => setError(String(e)));
+        case "undo":
+        case "redo":
+        case "cut":
+        case "copy":
+        case "select-all":
+          // On the focused text box, as the keyboard shortcuts do.
+          return void document.execCommand(action === "select-all" ? "selectAll" : action);
+        case "paste":
+          return void pasteIntoFocus().catch(() => setNotice(`Press ${MOD_KEY}+V to paste.`));
+        case "toggle-details":
+          return setDetailsOpen((open) => !open);
         case "find":
           return document.querySelector<HTMLInputElement>(".search input")?.focus();
         case "toggle-explorer":
@@ -455,6 +445,9 @@ export default function App() {
       if (mod && e.shiftKey && key === "m") return command("mermaid-viewer");
       if (mod && key === "o") return command("open-folder");
       if (mod && key === "b") return command("toggle-explorer");
+      if (mod && !e.shiftKey && key === "w") return command("close-window");
+      if (mod && key === "q") return command("exit");
+      if (e.key === "F11") return command("fullscreen");
       const typing = (e.target as HTMLElement | null)?.closest("input, textarea");
       if (typing || mod || e.altKey) return;
       if (e.key === "Escape") setSelected(null);
@@ -669,280 +662,267 @@ export default function App() {
     onSelect: setSelected,
   };
 
+  const menus = useMemo(
+    () =>
+      buildMenus({
+        recent,
+        hasProject: scan !== null,
+        sidebarOpen,
+        detailsOpen,
+        viewMode,
+        colorMode,
+        autoRotate,
+        hideNoise,
+        theme,
+        maximized,
+      }),
+    [recent, scan, sidebarOpen, detailsOpen, viewMode, colorMode, autoRotate, hideNoise, theme, maximized],
+  );
+
   return (
     <div className="app">
-      <header className="topbar">
-        {scan && (
-          <button
-            className="icon-btn"
-            title="Home: close this project and go back to the start page"
-            aria-label="Home"
-            disabled={scanning !== null}
-            onClick={goHome}
-          >
-            <House size={18} />
-          </button>
-        )}
-        {scan && (
-          <button
-            className={sidebarOpen ? "icon-btn active" : "icon-btn"}
-            title={`Show or hide the explorer (${MOD_KEY}+B)`}
-            aria-pressed={sidebarOpen}
-            onClick={() => setSidebarOpen((open) => !open)}
-          >
-            <PanelLeft size={18} />
-          </button>
-        )}
-        {/* The project's name heads the explorer; the top bar only names the app. */}
-        <div className="brand" title="Repository Visual Analysis">
-          <Logo size={22} />
-          {!scan && <span className="app-name">Repository Visual Analysis</span>}
-        </div>
-        <div className="topbar-center">
-          {view && (
+      <TitleBar
+        menus={menus}
+        onAction={runAction}
+        search={
+          view && (
             <SearchBox files={view.files} hiddenFiles={hiddenFiles} onPick={reveal} onShowHidden={toggleNoise} />
-          )}
-        </div>
-        <button
-          className={mermaidDoc ? "btn active" : "btn"}
-          onClick={() => setMermaidDoc((doc) => doc ?? mermaidDraft.current)}
-          title="Open the Mermaid viewer"
-        >
-          <Workflow size={16} />
-          Mermaid
-        </button>
-        <button
-          className="btn"
-          onClick={() => void chooseFolder()}
-          disabled={scanning !== null}
-          title={`Open a project folder (${MOD_KEY}+O)`}
-        >
-          <FolderOpen size={16} />
-          Open folder
-        </button>
-        <button
-          className="icon-btn"
-          onClick={() => void openNewWindow()}
-          title={`Open a new window for another project (${MOD_KEY}+Shift+N)`}
-        >
-          <SquarePlus size={18} />
-        </button>
-        <button className="icon-btn" onClick={() => setDialog("settings")} title={`Settings (${MOD_KEY}+,)`}>
-          <Settings size={18} />
-        </button>
-      </header>
+          )
+        }
+        sidebarOpen={sidebarOpen}
+        detailsOpen={detailsOpen}
+        maximized={maximized}
+      />
 
-      <div className="workspace">
-        {scan && view && tree ? (
-          <>
-            {sidebarOpen && (
-              <Sidebar
-                projectName={baseName(scan.root)}
-                projectPath={scan.root}
-                tree={tree}
-                keyFiles={keyFiles}
-                colorOf={colorOf}
-                expanded={expanded}
-                selected={selected}
-                focusRequest={focusRequest}
-                onToggle={toggleFolder}
-                onSelect={reveal}
-                onHover={setTreeHover}
-                onCollapseAll={collapseAll}
-              />
-            )}
-            <main className={viewMode === "3d" ? "canvas space" : "canvas"}>
-              {/* A new project gets a fresh view: full layout, camera reset, fade in. */}
-              {viewMode === "3d" ? (
-                <Graph3DView
-                  key={scan.root}
-                  {...viewProps}
-                  autoRotate={autoRotate}
-                  onCameraStart={dismissNavHint}
-                />
-              ) : (
-                <GraphView key={scan.root} {...viewProps} />
-              )}
-              <div className="view-switch floating">
-                <div className="segmented" role="radiogroup" aria-label="View">
-                  {VIEW_MODES.map((mode) => (
-                    <button
-                      key={mode}
-                      role="radio"
-                      aria-checked={viewMode === mode}
-                      className={viewMode === mode ? "active" : undefined}
-                      title={mode === "3d" ? "Rotatable 3D view (V)" : "Flat 2D view (V)"}
-                      onClick={() => setViewMode(mode)}
-                    >
-                      {mode.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-                {viewMode === "3d" && !prefersReducedMotion() && (
-                  <button
-                    className={autoRotate ? "icon-btn active" : "icon-btn"}
-                    title={autoRotate ? "Stop turning (R)" : "Turn slowly, like a globe (R)"}
-                    aria-pressed={autoRotate}
-                    onClick={() => setAutoRotate((on) => !on)}
-                  >
-                    <Orbit size={16} />
-                  </button>
-                )}
-                <button
-                  className={hideNoise ? "icon-btn active" : "icon-btn"}
-                  title={
-                    hideNoise
-                      ? "Show tests, docs, examples and generated files (H)"
-                      : "Hide tests, docs, examples and generated files (H)"
-                  }
-                  aria-pressed={hideNoise}
-                  onClick={toggleNoise}
-                >
-                  <Funnel size={16} />
-                </button>
-              </div>
-              {view.files.length === 0 && scan.files.length > 0 && (
-                <div className="empty-note floating" role="note">
-                  <span>Every file in this project is a test, doc, example or generated file.</span>
-                  <button className="btn small" onClick={toggleNoise}>
-                    Show them
-                  </button>
-                </div>
-              )}
-              {viewMode === "3d" && !navHintSeen && (
-                <div className="nav-hint floating" role="note">
-                  Drag to turn · Scroll to zoom · Right-drag to move
-                </div>
-              )}
-              <div className="graph-controls floating">
-                <button className="icon-btn" title="Zoom in (+)" onClick={() => graphApi.current?.zoomIn()}>
-                  <ZoomIn size={16} />
-                </button>
-                <button className="icon-btn" title="Zoom out (−)" onClick={() => graphApi.current?.zoomOut()}>
-                  <ZoomOut size={16} />
-                </button>
-                <button className="icon-btn" title="Fit to screen (F)" onClick={() => graphApi.current?.fit()}>
-                  <Maximize size={16} />
-                </button>
-                {selected && (
-                  <button
-                    className="icon-btn"
-                    title="Centre on the selection"
-                    onClick={() => graphApi.current?.centre()}
-                  >
-                    <Crosshair size={16} />
-                  </button>
-                )}
-                <div className="controls-sep" />
-                <ExportMenu
-                  busy={exporting}
-                  selection={selected ? nameOf(selected) + (selected.endsWith("/") ? "/" : "") : null}
-                  onExport={(kind) => void runExport(kind)}
-                  onOpenManager={() => setDialog("exports")}
-                />
-              </div>
-              {coloring && (
-                <Legend
-                  coloring={coloring}
-                  view={viewMode}
-                  onMode={setColorMode}
-                  hovered={legendHover}
-                  onHover={setLegendHover}
-                />
-              )}
-            </main>
-            {selected &&
-              (selected.endsWith("/") ? (
-                <FolderDetails
-                  scan={view}
-                  path={selected}
-                  color={colorOf(selected)}
-                  open={expanded.has(selected)}
-                  onSelect={reveal}
+      <div className="main-row">
+        <ActivityBar
+          active={
+            dialog === "settings"
+              ? "settings"
+              : dialog === "exports"
+                ? "exports"
+                : mermaidDoc
+                  ? "mermaid"
+                  : scan
+                    ? null
+                    : "home"
+          }
+          onAction={runAction}
+        />
+        <div className="workspace">
+          {scan && view && tree ? (
+            <>
+              {sidebarOpen && (
+                <Sidebar
+                  projectName={baseName(scan.root)}
+                  projectPath={scan.root}
+                  tree={tree}
+                  keyFiles={keyFiles}
+                  colorOf={colorOf}
+                  expanded={expanded}
+                  selected={selected}
+                  focusRequest={focusRequest}
                   onToggle={toggleFolder}
-                  onReveal={revealInFileManager}
-                  onClose={() => setSelected(null)}
-                />
-              ) : (
-                <FileDetails
-                  scan={view}
-                  path={selected}
                   onSelect={reveal}
-                  onReveal={revealInFileManager}
-                  onClose={() => setSelected(null)}
+                  onHover={setTreeHover}
+                  onCollapseAll={collapseAll}
                 />
-              ))}
-          </>
-        ) : (
-          <Welcome
-            recent={recent}
-            busy={scanning !== null}
-            onOpen={() => void chooseFolder()}
-            onOpenRecent={(path) => void openProject(path)}
-            onForget={(path) => setRecent(forgetRecent(path))}
-            onOpenMermaid={() => setMermaidDoc(mermaidDraft.current)}
-          />
-        )}
+              )}
+              <main className={viewMode === "3d" ? "canvas space" : "canvas"}>
+                {/* A new project gets a fresh view: full layout, camera reset, fade in. */}
+                {viewMode === "3d" ? (
+                  <Graph3DView
+                    key={scan.root}
+                    {...viewProps}
+                    autoRotate={autoRotate}
+                    onCameraStart={dismissNavHint}
+                  />
+                ) : (
+                  <GraphView key={scan.root} {...viewProps} />
+                )}
+                <div className="view-switch floating">
+                  <div className="segmented" role="radiogroup" aria-label="View">
+                    {VIEW_MODES.map((mode) => (
+                      <button
+                        key={mode}
+                        role="radio"
+                        aria-checked={viewMode === mode}
+                        className={viewMode === mode ? "active" : undefined}
+                        title={mode === "3d" ? "Rotatable 3D view (V)" : "Flat 2D view (V)"}
+                        onClick={() => setViewMode(mode)}
+                      >
+                        {mode.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  {viewMode === "3d" && !prefersReducedMotion() && (
+                    <button
+                      className={autoRotate ? "icon-btn active" : "icon-btn"}
+                      title={autoRotate ? "Stop turning (R)" : "Turn slowly, like a globe (R)"}
+                      aria-pressed={autoRotate}
+                      onClick={() => setAutoRotate((on) => !on)}
+                    >
+                      <Orbit size={16} />
+                    </button>
+                  )}
+                  <button
+                    className={hideNoise ? "icon-btn active" : "icon-btn"}
+                    title={
+                      hideNoise
+                        ? "Show tests, docs, examples and generated files (H)"
+                        : "Hide tests, docs, examples and generated files (H)"
+                    }
+                    aria-pressed={hideNoise}
+                    onClick={toggleNoise}
+                  >
+                    <Funnel size={16} />
+                  </button>
+                </div>
+                {view.files.length === 0 && scan.files.length > 0 && (
+                  <div className="empty-note floating" role="note">
+                    <span>Every file in this project is a test, doc, example or generated file.</span>
+                    <button className="btn small" onClick={toggleNoise}>
+                      Show them
+                    </button>
+                  </div>
+                )}
+                {viewMode === "3d" && !navHintSeen && (
+                  <div className="nav-hint floating" role="note">
+                    Drag to turn · Scroll to zoom · Right-drag to move
+                  </div>
+                )}
+                <div className="graph-controls floating">
+                  <button className="icon-btn" title="Zoom in (+)" onClick={() => graphApi.current?.zoomIn()}>
+                    <ZoomIn size={16} />
+                  </button>
+                  <button className="icon-btn" title="Zoom out (−)" onClick={() => graphApi.current?.zoomOut()}>
+                    <ZoomOut size={16} />
+                  </button>
+                  <button className="icon-btn" title="Fit to screen (F)" onClick={() => graphApi.current?.fit()}>
+                    <Maximize size={16} />
+                  </button>
+                  {selected && (
+                    <button
+                      className="icon-btn"
+                      title="Centre on the selection"
+                      onClick={() => graphApi.current?.centre()}
+                    >
+                      <Crosshair size={16} />
+                    </button>
+                  )}
+                  <div className="controls-sep" />
+                  <ExportMenu
+                    busy={exporting}
+                    selection={selected ? nameOf(selected) + (selected.endsWith("/") ? "/" : "") : null}
+                    onExport={(kind) => void runExport(kind)}
+                    onOpenManager={() => setDialog("exports")}
+                  />
+                </div>
+                {coloring && (
+                  <Legend
+                    coloring={coloring}
+                    view={viewMode}
+                    onMode={setColorMode}
+                    hovered={legendHover}
+                    onHover={setLegendHover}
+                  />
+                )}
+              </main>
+              {selected &&
+                detailsOpen &&
+                (selected.endsWith("/") ? (
+                  <FolderDetails
+                    scan={view}
+                    path={selected}
+                    color={colorOf(selected)}
+                    open={expanded.has(selected)}
+                    onSelect={reveal}
+                    onToggle={toggleFolder}
+                    onReveal={revealInFileManager}
+                    onClose={() => setSelected(null)}
+                  />
+                ) : (
+                  <FileDetails
+                    scan={view}
+                    path={selected}
+                    onSelect={reveal}
+                    onReveal={revealInFileManager}
+                    onClose={() => setSelected(null)}
+                  />
+                ))}
+            </>
+          ) : (
+            <Welcome
+              recent={recent}
+              busy={scanning !== null}
+              onOpen={() => void chooseFolder()}
+              onOpenRecent={(path) => void openProject(path)}
+              onForget={(path) => setRecent(forgetRecent(path))}
+              onOpenMermaid={() => setMermaidDoc(mermaidDraft.current)}
+            />
+          )}
 
-        {mermaidDoc && (
-          <MermaidViewer
-            key={mermaidDoc.rev ?? 0}
-            initialText={mermaidDoc.text}
-            name={mermaidDoc.name}
-            onClose={(text, name) => {
-              mermaidDraft.current = { text, name };
-              setMermaidDoc(null);
-            }}
-            onNotice={setNotice}
-          />
-        )}
+          {mermaidDoc && (
+            <MermaidViewer
+              key={mermaidDoc.rev ?? 0}
+              initialText={mermaidDoc.text}
+              name={mermaidDoc.name}
+              onClose={(text, name) => {
+                mermaidDraft.current = { text, name };
+                setMermaidDoc(null);
+              }}
+              onNotice={setNotice}
+            />
+          )}
 
-        {dialog === "settings" && (
-          <SettingsDialog
-            prefs={{ theme, viewMode, colorMode, autoRotate, hideNoise, navHintSeen, reopenLast }}
-            onChange={changePrefs}
-            recentCount={recent.length}
-            onClearRecent={() => setRecent(clearRecent())}
-            onOpenExports={() => setDialog("exports")}
-            onClose={() => setDialog(null)}
-          />
-        )}
-        {dialog === "exports" && <ExportManager onClose={() => setDialog(null)} onError={setError} />}
-        {dialog === "about" && <AboutDialog onClose={() => setDialog(null)} />}
-        {dialog === "shortcuts" && <ShortcutsDialog onClose={() => setDialog(null)} />}
+          {dialog === "settings" && (
+            <SettingsDialog
+              prefs={{ theme, viewMode, colorMode, autoRotate, hideNoise, navHintSeen, reopenLast }}
+              onChange={changePrefs}
+              recentCount={recent.length}
+              onClearRecent={() => setRecent(clearRecent())}
+              onOpenExports={() => setDialog("exports")}
+              onClose={() => setDialog(null)}
+            />
+          )}
+          {dialog === "exports" && <ExportManager onClose={() => setDialog(null)} onError={setError} />}
+          {dialog === "about" && <AboutDialog onClose={() => setDialog(null)} />}
+          {dialog === "shortcuts" && <ShortcutsDialog onClose={() => setDialog(null)} />}
 
-        {scanning && (
-          <div className="overlay" role="status">
-            <div className="overlay-card">
-              <LoaderCircle size={28} className="spin" />
-              <div>
-                Scanning <strong>{baseName(scanning)}</strong>…
-              </div>
-              <div className="muted">
-                The first scan of a large project takes a few seconds. After that, the cache makes
-                it quick.
+          {scanning && (
+            <div className="overlay" role="status">
+              <div className="overlay-card">
+                <LoaderCircle size={28} className="spin" />
+                <div>
+                  Scanning <strong>{baseName(scanning)}</strong>…
+                </div>
+                <div className="muted">
+                  The first scan of a large project takes a few seconds. After that, the cache makes
+                  it quick.
+                </div>
               </div>
             </div>
-          </div>
-        )}
-        {notice && !error && (
-          <div className="toast info" role="status">
-            <Check size={16} />
-            <span>{notice}</span>
-            <button className="icon-btn" aria-label="Dismiss" onClick={() => setNotice(null)}>
-              <X size={14} />
-            </button>
-          </div>
-        )}
-        {error && (
-          <div className="toast" role="alert">
-            <TriangleAlert size={16} />
-            <span>{error}</span>
-            <button className="icon-btn" aria-label="Dismiss" onClick={() => setError(null)}>
-              <X size={14} />
-            </button>
-          </div>
-        )}
+          )}
+          {notice && !error && (
+            <div className="toast info" role="status">
+              <Check size={16} />
+              <span>{notice}</span>
+              <button className="icon-btn" aria-label="Dismiss" onClick={() => setNotice(null)}>
+                <X size={14} />
+              </button>
+            </div>
+          )}
+          {error && (
+            <div className="toast" role="alert">
+              <TriangleAlert size={16} />
+              <span>{error}</span>
+              <button className="icon-btn" aria-label="Dismiss" onClick={() => setError(null)}>
+                <X size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+
       </div>
 
       {scan && view && (
@@ -985,4 +965,14 @@ function hidesAll(scan: ScanResult, id: string): boolean {
 /** A project name made safe to start a file name with. */
 function fileStem(name: string): string {
   return name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-").replace(/^[.\s-]+|[.\s-]+$/g, "") || "project";
+}
+
+/** Edit > Paste: the clipboard's text into the focused text box, as the keyboard does. */
+async function pasteIntoFocus() {
+  const field = document.activeElement;
+  if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) return;
+  const text = await navigator.clipboard.readText();
+  field.setRangeText(text, field.selectionStart ?? field.value.length, field.selectionEnd ?? field.value.length, "end");
+  // React only sees the change through an input event.
+  field.dispatchEvent(new Event("input", { bubbles: true }));
 }

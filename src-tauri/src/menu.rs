@@ -1,7 +1,9 @@
-//! The app's menu bar: File, Edit, View, Export, Window and Help, as in other desktop
-//! apps. A few items act here (new window, close window, full screen, quit, web links);
-//! the rest are sent to the window in front as a `menu` event, and the UI runs the same
-//! action its buttons and shortcuts run.
+//! The app's menus. On Windows and Linux the window is frameless and the UI draws its
+//! own title bar with File, Edit, View, Export, Window and Help, so the native menu is
+//! only built on macOS, where it lives in the screen's top bar. There, a few items act
+//! here (new window, close window, full screen, quit, web links); the rest are sent to
+//! the window in front as a `menu` event, and the UI runs the same action its own menus,
+//! buttons and shortcuts run.
 
 use std::sync::Mutex;
 
@@ -34,7 +36,9 @@ struct MenuAction {
     path: Option<String>,
 }
 
-/// Builds the menu bar. Items sent to the UI use its action names as their ids.
+/// Builds the native menu bar (macOS only). Items sent to the UI use its action names as
+/// their ids.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let item = |id: &str, text: &str, accelerator: Option<&str>| {
         MenuItem::with_id(app, id, text, true, accelerator)
@@ -216,10 +220,8 @@ pub fn handle(app: &AppHandle, id: &str) {
             w.set_fullscreen(!on)
         }),
         "github" | "report-issue" => {
-            let url = if id == "github" { REPO_URL } else { ISSUES_URL };
-            // Only these fixed web pages; files are never opened.
-            if let Err(e) = tauri_plugin_opener::open_url(url, None::<&str>) {
-                eprintln!("cannot open {url}: {e}");
+            if let Err(e) = open_link(id.to_owned()) {
+                eprintln!("{e}");
             }
             Ok(())
         }
@@ -253,6 +255,24 @@ pub fn handle(app: &AppHandle, id: &str) {
     if let Err(e) = result {
         eprintln!("menu item {id} failed: {e}");
     }
+}
+
+/// Opens one of the app's web pages in the browser: the project ("github") or its issue
+/// tracker ("report-issue"). Only these fixed pages; files are never opened.
+#[tauri::command]
+pub fn open_link(which: String) -> Result<(), String> {
+    let url = match which.as_str() {
+        "github" => REPO_URL,
+        "report-issue" => ISSUES_URL,
+        _ => return Err(format!("no link called {which}")),
+    };
+    tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| format!("cannot open {url}: {e}"))
+}
+
+/// Quits the app, closing every window: File > Exit in the UI's own menus.
+#[tauri::command]
+pub fn exit_app(app: AppHandle) {
+    app.exit(0);
 }
 
 /// The window the menu was used in: the focused one, or else the first window.

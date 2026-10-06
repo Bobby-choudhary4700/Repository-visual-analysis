@@ -246,41 +246,296 @@ button:focus-visible {
   height: 100%;
 }
 
-.topbar {
+/* ---- Title bar: the frameless window's own frame ------------------------ */
+
+.titlebar {
+  display: grid;
+  grid-template-columns: 1fr minmax(200px, 520px) 1fr;
+  align-items: center;
+  height: 38px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  user-select: none;
+}
+
+.titlebar-left,
+.titlebar-right {
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 52px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border);
+  min-width: 0;
+  height: 100%;
+}
+
+.titlebar-right {
+  justify-content: flex-end;
+}
+
+.titlebar-logo {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  flex-shrink: 0;
+}
+
+.titlebar-center {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.titlebar .search {
+  width: 100%;
+}
+
+.titlebar .search input {
+  height: 26px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.tb-btn,
+.wc-btn {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.tb-btn {
+  width: 34px;
+}
+
+.tb-btn:hover,
+.wc-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.tb-btn.active {
+  color: var(--text);
+}
+
+.window-controls {
+  display: flex;
+  height: 100%;
+  margin-left: 6px;
+}
+
+.wc-btn {
+  width: 46px;
+}
+
+.wc-btn.close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+.wc-restore {
+  transform: scaleX(-1);
+}
+
+/* Menus in the title bar */
+
+.menubar {
+  display: flex;
+  height: 100%;
+}
+
+.mb-top {
+  position: relative;
+  height: 100%;
+}
+
+.mb-name {
+  height: 100%;
+  padding: 0 9px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: default;
+}
+
+.mb-name:hover,
+.mb-name.open {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.mb-menu {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 2px);
+  left: 0;
+  min-width: 250px;
+  max-width: 460px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+  animation: fade 0.08s ease;
+}
+
+.mb-subwrap {
+  position: relative;
+}
+
+.mb-submenu {
+  top: -5px;
+  left: calc(100% + 4px);
+}
+
+.mb-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 10px 5px 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.mb-item:hover:not(:disabled),
+.mb-item.open,
+.mb-item:focus-visible {
+  background: var(--brand);
+  color: #fff;
+  outline: none;
+}
+
+.mb-item:disabled {
+  color: var(--text-faint);
+}
+
+.mb-check {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  flex-shrink: 0;
+}
+
+.mb-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mb-shortcut {
+  margin-left: 24px;
+  opacity: 0.65;
+  font-size: 12px;
+}
+
+.mb-chevron {
+  margin-left: 12px;
+}
+
+.mb-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-strong);
+}
+
+/* ---- Activity bar: icons down the left edge ------------------------------- */
+
+.main-row {
+  display: flex;
+  min-height: 0;
+}
+
+.activity-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 48px;
+  padding: 4px 0 8px;
+  border-right: 1px solid var(--border);
   background: var(--surface);
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-}
-
-.app-name,
-.project-name {
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.topbar-center {
-  display: flex;
+.activity-spacer {
   flex: 1;
-  justify-content: center;
-  min-width: 0;
+}
+
+.activity-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 46px;
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.activity-btn:hover,
+.activity-btn:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
+.activity-btn.active {
+  color: var(--text);
+}
+
+.activity-btn.active::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--brand);
+  content: "";
+}
+
+/* The name of each icon, beside it on hover or keyboard focus. */
+.activity-btn::after {
+  position: absolute;
+  z-index: 70;
+  top: 50%;
+  left: calc(100% + 6px);
+  padding: 4px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 12.5px;
+  white-space: nowrap;
+  content: attr(data-tip);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-4px, -50%);
+  transition:
+    opacity 0.12s,
+    transform 0.12s;
+}
+
+.activity-btn:hover::after,
+.activity-btn:focus-visible::after {
+  opacity: 1;
+  transform: translate(0, -50%);
+  transition-delay: 0.25s;
 }
 
 .workspace {
   position: relative;
   display: flex;
+  flex: 1;
+  min-width: 0;
   min-height: 0;
 }
 

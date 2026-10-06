@@ -3,5 +3,13 @@
   "identifier": "default",
   "description": "Permissions for the app windows: the first one and every window opened after it",
   "windows": ["main", "window-*"],
-  "permissions": ["core:default", "dialog:allow-open"]
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-set-fullscreen"
+  ]
 }
