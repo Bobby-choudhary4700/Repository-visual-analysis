@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
+  Check,
   Crosshair,
   FolderOpen,
   LoaderCircle,
@@ -18,6 +19,8 @@ import {
 } from "lucide-react";
 import { COLOR_MODES, makeColoring, projectColors, type ColorMode } from "./coloring";
 import { typeLabel } from "./colors";
+import { ExportMenu, type ExportKind } from "./ExportMenu";
+import { MERMAID_MAX_EDGES, buildMermaid, buildSvg, svgToPng, type ExportInput } from "./exportGraph";
 import { FileDetails } from "./FileDetails";
 import { ROOT, buildVisibleGraph, parentOf } from "./graph";
 import { Graph3DView } from "./Graph3DView";
@@ -26,6 +29,7 @@ import { Legend } from "./Legend";
 import { Logo } from "./Logo";
 import { MOD_KEY, prefersReducedMotion } from "./platform";
 import { forgetRecent, loadRecent, rememberRecent } from "./recent";
+import { saveFile } from "./saveFile";
 import { SearchBox } from "./SearchBox";
 import { loadChoice, loadFlag, saveSetting } from "./settings";
 import { Sidebar } from "./Sidebar";
@@ -47,6 +51,9 @@ export default function App() {
   /** The folder being scanned, while a scan runs. */
   const [scanning, setScanning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** A short confirmation, such as where an export was saved. */
+  const [notice, setNotice] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [recent, setRecent] = useState<string[]>(loadRecent);
   const [dragging, setDragging] = useState(false);
@@ -271,6 +278,61 @@ export default function App() {
     [degree, tree, colorOf],
   );
 
+  // A confirmation goes away by itself; errors stay until dismissed.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  const runExport = useCallback(
+    async (kind: ExportKind) => {
+      const api = graphApi.current;
+      if (!scan || !api) return;
+      const title = baseName(scan.root);
+      // Only the colours the drawn nodes use go in the picture's key.
+      const used = new Set(visible.nodes.map((n) => coloring?.keyOf(n.id)));
+      const input: ExportInput = {
+        title,
+        nodes: visible.nodes,
+        edges: visible.edges,
+        imports: scan.edges.length,
+        colorOf,
+        key: (coloring?.entries ?? []).filter((e) => used.has(e.key)),
+      };
+      const stem = `${fileStem(title)}-graph`;
+      // Mermaid refuses big charts by default, so say so before someone pastes one.
+      const tooBig =
+        visible.edges.length > MERMAID_MAX_EDGES
+          ? ` It has ${visible.edges.length.toLocaleString()} wires and Mermaid may refuse more than ` +
+            `${MERMAID_MAX_EDGES}; if it does not draw, close some folders and export again.`
+          : "";
+      setExporting(true);
+      setError(null);
+      try {
+        if (kind === "copy-mermaid") {
+          await navigator.clipboard.writeText(buildMermaid(input));
+          setNotice(`Copied the Mermaid diagram.${tooBig}`);
+          return;
+        }
+        let saved: string | null;
+        if (kind === "mermaid") {
+          saved = await saveFile(`${stem}.mmd`, new TextEncoder().encode(buildMermaid(input)));
+        } else {
+          const { svg, width, height } = buildSvg(input, api.positions());
+          const data = kind === "svg" ? new TextEncoder().encode(svg) : await svgToPng(svg, width, height);
+          saved = await saveFile(`${stem}.${kind}`, data);
+        }
+        if (saved) setNotice(`Saved ${saved}.${kind === "mermaid" ? tooBig : ""}`);
+      } catch (e) {
+        setError(`Could not export the graph: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setExporting(false);
+      }
+    },
+    [scan, visible, coloring, colorOf],
+  );
+
   const viewProps = {
     nodes: visible.nodes,
     edges: visible.edges,
@@ -401,6 +463,8 @@ export default function App() {
                     <Crosshair size={16} />
                   </button>
                 )}
+                <div className="controls-sep" />
+                <ExportMenu busy={exporting} onExport={(kind) => void runExport(kind)} />
               </div>
               {coloring && (
                 <Legend
@@ -446,6 +510,15 @@ export default function App() {
             </div>
           </div>
         )}
+        {notice && !error && (
+          <div className="toast info" role="status">
+            <Check size={16} />
+            <span>{notice}</span>
+            <button className="icon-btn" aria-label="Dismiss" onClick={() => setNotice(null)}>
+              <X size={14} />
+            </button>
+          </div>
+        )}
         {error && (
           <div className="toast" role="alert">
             <TriangleAlert size={16} />
@@ -479,6 +552,11 @@ function initialExpansion(scan: ScanResult): Set<string> {
     if (nodes.length !== 1 || nodes[0].kind !== "folder") return expanded;
     expanded.add(nodes[0].id);
   }
+}
+
+/** A project name made safe to start a file name with. */
+function fileStem(name: string): string {
+  return name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-").replace(/^[.\s-]+|[.\s-]+$/g, "") || "project";
 }
 
 function plural(n: number, word: string): string {

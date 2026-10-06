@@ -22,6 +22,7 @@ import {
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { BACKGROUND } from "./colors";
+import type { ScreenPositions } from "./exportGraph";
 import { ROOT, parentOf, seededRandom, type VisibleEdge, type VisibleNode } from "./graph";
 import {
   ArrowLayer,
@@ -384,6 +385,25 @@ export class GraphScene {
     this.measure();
     const goal = this.fitGoal();
     if (goal) this.moveCamera(goal.position, goal.target, 650);
+  }
+
+  /**
+   * Where each node appears on screen from the current camera, in pixels, with its depth
+   * (larger is farther). Nodes behind the camera are left out.
+   */
+  screenPositions(): ScreenPositions {
+    const camera = this.fg.camera();
+    camera.updateMatrixWorld();
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    const out: ScreenPositions = new Map();
+    const v = new Vector3();
+    for (const node of this.nodes.values()) {
+      v.set(node.x ?? 0, node.y ?? 0, node.z ?? 0).project(camera);
+      if (v.z > 1) continue;
+      out.set(node.id, { x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height, depth: v.z });
+    }
+    return out;
   }
 
   resize(width: number, height: number) {

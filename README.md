@@ -25,6 +25,12 @@ look at it from any side, and a flat 2D view is one key away.
 - Zoom with the scroll wheel, the buttons at the bottom right, or **+** and **−**. **F** fits
   the whole graph and **Esc** clears the selection.
 - **Live** in the status bar means the folder is watched: saving a file redraws the graph.
+- **Export** the graph with the picture button under the zoom buttons. **PNG** and **SVG**
+  save a picture of what is shown (the open folders, the colours and, in 3D, the current
+  angle) with a colour key. **Save as Mermaid** writes a `.mmd` flowchart, and **Copy Mermaid**
+  puts one on the clipboard to paste into a `mermaid` code block in a README or pull request,
+  where GitHub draws it. Open folders become boxes around their files, and a wire that
+  stands for several imports is labelled with the count.
 
 ![App.tsx selected: its wires light up with arrows toward the files it imports, which are listed in the side panel](docs/selected.png)
 
@@ -74,7 +80,7 @@ time and 44 ms with the cache.
 
 | Language | What becomes a wire |
 | --- | --- |
-| JavaScript / TypeScript / TSX | relative `import`, `export … from`, `require()`, `import()` |
+| JavaScript / TypeScript / TSX | `import`, `export … from`, `require()`, `import()` of relative paths, and of aliases like `~/lib/db` or `@/components/Button` set by `paths` and `baseUrl` in the nearest `tsconfig.json` or `jsconfig.json` |
 | Python | `import a.b`, `from .x import y` (relative and absolute) |
 | Rust | `mod name;` declarations and `use` paths (`crate::`, `self::`, `super::`) |
 
@@ -99,11 +105,14 @@ src/                 React frontend
   SearchBox.tsx      Ctrl+K file search (ranking in search.ts)
   FileDetails.tsx    imports / imported-by panel for the selected file
   Legend.tsx         the colour key and colour mode switch
+  ExportMenu.tsx     the export menu; exportGraph.ts builds the SVG, PNG and Mermaid
   StatusBar.tsx, styles.css
 src-tauri/           Rust backend
   src/lib.rs         commands the frontend calls: scan_repository, reveal_in_file_manager
+  src/export.rs      save_export: the save dialog and file write for exports
   src/project.rs     keeps file actions inside the open project
-  src/scanner/       walk.rs (file listing), imports.rs (tree-sitter), resolve.rs, cache.rs
+  src/scanner/       walk.rs (file listing), imports.rs (tree-sitter), resolve.rs,
+                     aliases.rs (tsconfig paths), cache.rs
   src/watcher.rs     debounced file watching for live updates
   examples/scan.rs   command-line scan for benchmarking
 ```

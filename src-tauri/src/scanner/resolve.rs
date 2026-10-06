@@ -1,14 +1,21 @@
 //! Maps a raw import specifier to the project file(s) it refers to.
 //! Specifiers that point outside the project (npm packages, the standard library) resolve to nothing.
 
+use super::aliases::Aliases;
 use super::Lang;
 
 const JS_EXTENSIONS: &[&str] = &["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts"];
 
 /// `exists` answers whether a root-relative path is a scanned file.
-pub fn resolve(lang: Lang, from: &str, spec: &str, exists: impl Fn(&str) -> bool) -> Vec<String> {
+pub fn resolve(
+    lang: Lang,
+    from: &str,
+    spec: &str,
+    aliases: &Aliases,
+    exists: impl Fn(&str) -> bool,
+) -> Vec<String> {
     let candidates = match lang {
-        Lang::Javascript | Lang::Typescript | Lang::Tsx => js_candidates(from, spec),
+        Lang::Javascript | Lang::Typescript | Lang::Tsx => js_candidates(from, spec, aliases),
         Lang::Python => python_candidates(from, spec),
         Lang::Rust => rust_candidates(from, spec, &exists),
     };
@@ -16,14 +23,19 @@ pub fn resolve(lang: Lang, from: &str, spec: &str, exists: impl Fn(&str) -> bool
     candidates.into_iter().find(|c| exists(c)).into_iter().collect()
 }
 
-fn js_candidates(from: &str, spec: &str) -> Vec<String> {
-    if !spec.starts_with('.') {
-        return Vec::new();
-    }
-    let Some(base) = join(dir(from), spec) else {
-        return Vec::new();
+fn js_candidates(from: &str, spec: &str, aliases: &Aliases) -> Vec<String> {
+    // A bare specifier is a package, unless a tsconfig alias says it is a project file.
+    let bases = if spec.starts_with('.') {
+        join(dir(from), spec).into_iter().collect()
+    } else {
+        aliases.candidates(from, spec)
     };
-    let mut out = vec![base.clone()];
+    bases.iter().flat_map(|base| js_files(base)).collect()
+}
+
+/// The files a module path can mean: itself, with an extension added, or a folder's index.
+fn js_files(base: &str) -> Vec<String> {
+    let mut out = vec![base.to_string()];
     // TypeScript ESM code imports "./x.js" while the file on disk is "./x.ts".
     if let Some(stem) = base
         .strip_suffix(".js")
@@ -188,11 +200,11 @@ fn crate_root(from: &str, exists: &impl Fn(&str) -> bool) -> Option<String> {
 }
 
 /// Folder part of a root-relative path; `""` for files at the root.
-fn dir(path: &str) -> &str {
+pub(super) fn dir(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(d, _)| d)
 }
 
-fn parent(dir: &str) -> Option<&str> {
+pub(super) fn parent(dir: &str) -> Option<&str> {
     if dir.is_empty() {
         None
     } else {
@@ -200,7 +212,7 @@ fn parent(dir: &str) -> Option<&str> {
     }
 }
 
-fn child(dir: &str, name: &str) -> String {
+pub(super) fn child(dir: &str, name: &str) -> String {
     if dir.is_empty() {
         name.to_string()
     } else if name.is_empty() {
@@ -212,7 +224,7 @@ fn child(dir: &str, name: &str) -> String {
 
 /// Joins a relative specifier onto a folder, folding `.` and `..`.
 /// Returns `None` when the path climbs above the project root.
-fn join(base: &str, rel: &str) -> Option<String> {
+pub(super) fn join(base: &str, rel: &str) -> Option<String> {
     let mut parts: Vec<&str> = base.split('/').filter(|p| !p.is_empty()).collect();
     for seg in rel.split('/') {
         match seg {
@@ -231,7 +243,7 @@ mod tests {
     use super::*;
 
     fn one(lang: Lang, from: &str, spec: &str, files: &[&str]) -> Option<String> {
-        resolve(lang, from, spec, |p| files.contains(&p)).into_iter().next()
+        resolve(lang, from, spec, &Aliases::default(), |p| files.contains(&p)).into_iter().next()
     }
 
     #[test]
