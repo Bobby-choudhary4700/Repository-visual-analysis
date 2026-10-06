@@ -4,8 +4,108 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Repository Visual Analysis</title>
+    <!-- Shown from the first frame until the app has drawn itself, so the window is never
+         blank while the scripts load. Inline, since nothing else has loaded yet. -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b1120;
+      }
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: radial-gradient(ellipse at 50% 42%, #14213b 0%, #0b1120 58%, #070b15 100%);
+        color: #e2e8f0;
+        font: 600 15px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        letter-spacing: 0.01em;
+        transition: opacity 0.25s ease;
+      }
+      #splash.light {
+        background: radial-gradient(ellipse at 50% 42%, #e6f0fb 0%, #f4f6fa 60%);
+        color: #0f172a;
+      }
+      #splash.done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #splash svg .wire {
+        stroke-dasharray: 46;
+        animation: splash-draw 1.4s ease-in-out infinite;
+      }
+      #splash svg circle {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: splash-pulse 1.4s ease-in-out infinite;
+      }
+      #splash svg circle:nth-of-type(2) {
+        animation-delay: 0.2s;
+      }
+      #splash svg circle:nth-of-type(3) {
+        animation-delay: 0.4s;
+      }
+      #splash .bar {
+        position: relative;
+        width: 160px;
+        height: 3px;
+        overflow: hidden;
+        border-radius: 3px;
+        background: rgb(148 163 184 / 22%);
+      }
+      #splash .bar::after {
+        position: absolute;
+        inset: 0;
+        width: 40%;
+        border-radius: 3px;
+        background: linear-gradient(90deg, #38bdf8, #818cf8);
+        animation: splash-slide 1.1s ease-in-out infinite;
+        content: "";
+      }
+      @keyframes splash-draw {
+        0% { stroke-dashoffset: 46; }
+        50% { stroke-dashoffset: 0; }
+        100% { stroke-dashoffset: -46; }
+      }
+      @keyframes splash-pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.18); }
+      }
+      @keyframes splash-slide {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(250%); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #splash * { animation: none !important; }
+      }
+    </style>
   </head>
   <body>
+    <div id="splash" role="status" aria-label="Loading">
+      <svg width="72" height="72" viewBox="0 0 32 32" aria-hidden="true">
+        <path class="wire" d="M8.5 10 L23.5 10 L16 23.5 Z" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linejoin="round" />
+        <circle cx="8.5" cy="10" r="3.8" fill="#38bdf8" />
+        <circle cx="23.5" cy="10" r="3.8" fill="#38bdf8" />
+        <circle cx="16" cy="23.5" r="3.8" fill="#f472b6" />
+      </svg>
+      <div>Repository Visual Analysis</div>
+      <div class="bar"></div>
+    </div>
+    <script>
+      // Match the saved theme from the first frame (see src/theme.ts).
+      try {
+        const theme = localStorage.getItem("rva.theme");
+        const light =
+          theme === "light" || (theme === "system" && matchMedia("(prefers-color-scheme: light)").matches);
+        if (light) document.getElementById("splash").classList.add("light");
+      } catch {}
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

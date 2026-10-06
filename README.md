@@ -53,9 +53,10 @@ look at it from any side, and a flat 2D view is one key away.
   folder, open recent, Mermaid, close folder, close window, exit), Edit, View (panels,
   3D or 2D, colours, zoom, theme, full screen), Export, Window and Help (keyboard
   shortcuts, About). On macOS the same menus are also in the screen's menu bar.
-- The **activity bar** down the left edge has Home, the Mermaid viewer, the export
-  manager and Open folder, with **Settings** (Ctrl+,) at the bottom; each names itself on
-  hover. Settings holds the theme (dark, light or match the system), the graph choices
+- The **activity bar** down the left edge has the Explorer (back to the open project),
+  the Mermaid viewer, the export manager and Open folder, with **Settings** (Ctrl+,) at the bottom; each names itself on
+  hover. Switching between the explorer and the Mermaid viewer keeps both as they were.
+  Settings holds the theme (dark, light or match the system), the graph choices
   and start-up behaviour.
 
 ![App.tsx selected: its wires light up with arrows toward the files it imports, which are listed in the side panel](docs/selected.png)

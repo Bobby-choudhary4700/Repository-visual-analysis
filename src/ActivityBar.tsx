@@ -1,11 +1,11 @@
-import { FolderOpen, History, House, Settings, Workflow, type LucideIcon } from "lucide-react";
+import { Files, FolderOpen, History, Settings, Workflow, type LucideIcon } from "lucide-react";
 import type { Action } from "./appMenu";
 import { MOD_KEY } from "./platform";
 
-type Active = "home" | "mermaid" | "exports" | "settings" | null;
+type Active = "explorer" | "mermaid" | "exports" | "settings";
 
-const TOP: { id: Exclude<Active, null> | "open"; action: Action; label: string; Icon: LucideIcon }[] = [
-  { id: "home", action: "close-folder", label: "Home", Icon: House },
+const TOP: { id: Active | "open"; action: Action; label: string; Icon: LucideIcon }[] = [
+  { id: "explorer", action: "explorer", label: `Explorer (${MOD_KEY}+Shift+X)`, Icon: Files },
   { id: "mermaid", action: "mermaid-viewer", label: `Mermaid viewer (${MOD_KEY}+Shift+M)`, Icon: Workflow },
   { id: "exports", action: "export-manager", label: `Export manager (${MOD_KEY}+Shift+E)`, Icon: History },
   { id: "open", action: "open-folder", label: `Open folder (${MOD_KEY}+O)`, Icon: FolderOpen },

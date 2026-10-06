@@ -22,8 +22,13 @@ interface Props {
   initialText: string;
   /** File name stem for saved files, such as `my-repo-graph`. */
   name: string;
-  /** Closes the viewer, handing back the text so reopening it picks up where it was. */
-  onClose: (text: string, name: string) => void;
+  /**
+   * Hides the viewer. It stays mounted while hidden, so its text, drawing and zoom are
+   * all still there when it is shown again.
+   */
+  onClose: () => void;
+  /** Hidden behind the explorer: kept as it is, but not shown and not listening for keys. */
+  hidden?: boolean;
   onNotice: (message: string) => void;
 }
 
@@ -50,7 +55,7 @@ type View = { x: number; y: number; k: number };
  * Shows a Mermaid diagram next to its text, redrawn as the text changes, and saves it as
  * SVG, PNG or .mmd. The text can come from the graph's export, a file, or typing.
  */
-export function MermaidViewer({ initialText, name: initialName, onClose, onNotice }: Props) {
+export function MermaidViewer({ initialText, name: initialName, onClose, onNotice, hidden = false }: Props) {
   const [text, setText] = useState(initialText);
   const [name, setName] = useState(initialName);
   const [theme, setTheme] = useState<MermaidTheme>(() =>
@@ -150,10 +155,11 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
     return () => preview.removeEventListener("wheel", onWheel);
   }, []);
 
-  const close = useCallback(() => onClose(text, name), [onClose, text, name]);
+  const close = onClose;
 
   // Escape closes the viewer, or first leaves the text box.
   useEffect(() => {
+    if (hidden) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if (document.activeElement === textRef.current) textRef.current?.blur();
@@ -161,7 +167,7 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [close]);
+  }, [close, hidden]);
 
   const load = (next: string, nextName: string) => {
     fitNextRef.current = true;
@@ -211,7 +217,7 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
   const stale = problem !== null && diagram !== null;
 
   return (
-    <section className="mermaid-viewer" role="dialog" aria-label="Mermaid viewer">
+    <section className="mermaid-viewer" role="dialog" aria-label="Mermaid viewer" hidden={hidden}>
       <div className="mv-bar">
         <Workflow size={18} className="mv-logo" />
         <span className="mv-title">Mermaid viewer</span>

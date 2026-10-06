@@ -8,3 +8,13 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <App />
   </React.StrictMode>,
 );
+
+// The loading screen in index.html fades out once the app has drawn its first frame.
+requestAnimationFrame(() =>
+  requestAnimationFrame(() => {
+    const splash = document.getElementById("splash");
+    if (!splash) return;
+    splash.classList.add("done");
+    window.setTimeout(() => splash.remove(), 300);
+  }),
+);
