@@ -10,6 +10,10 @@ look at it from any side, and a flat 2D view is one key away.
 
 - **Open a project** with the Open folder button, **Ctrl+O** (Cmd+O on macOS), or by dropping
   a folder onto the window. The welcome screen lists recent projects.
+- **Open a second project side by side** with **Ctrl+Shift+N** (Cmd+Shift+N on macOS) or the
+  new-window button at the top right. Each window has its own project, live updates and
+  settings for what it shows, and its title names the project so windows are easy to tell
+  apart.
 - Click a folder to open it, and right-click any node to close the folder it sits in. The
   **Explorer** on the left (**Ctrl+B** hides it) opens and closes the same folders, and
   hovering one of its rows traces that node in the graph.
