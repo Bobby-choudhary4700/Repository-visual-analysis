@@ -8,6 +8,7 @@ import type { NodeDisplayData, PartialButFor } from "sigma/types";
 import { LoaderCircle } from "lucide-react";
 import { BACKGROUND } from "./colors";
 import { ROOT, parentOf, seededRandom, type VisibleEdge, type VisibleNode } from "./graph";
+import type { ScreenPositions } from "./exportGraph";
 import { animatePositions, computeLayout } from "./layout";
 import { prefersReducedMotion } from "./platform";
 import { NodeTooltip, type NodeInfo } from "./Tooltip";
@@ -46,6 +47,8 @@ export interface GraphHandle {
   fit(): void;
   /** Moves the camera to the selected file. */
   centre(): void;
+  /** Where every drawn node is on screen right now, for exporting the picture. */
+  positions(): ScreenPositions;
 }
 
 export interface GraphViewProps {
@@ -232,6 +235,11 @@ export function GraphView({
       centre: () => {
         const id = selectedRef.current;
         if (id && graph.hasNode(id)) centreOn(sigma, id);
+      },
+      positions: () => {
+        const out: ScreenPositions = new Map();
+        graph.forEachNode((id, attrs) => out.set(id, sigma.graphToViewport({ x: attrs.x, y: attrs.y })));
+        return out;
       },
     };
     sigmaRef.current = sigma;

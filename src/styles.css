@@ -308,6 +308,18 @@ button:focus-visible {
   cursor: default;
 }
 
+.results li.none.action {
+  cursor: pointer;
+}
+
+.results li.none.action:hover {
+  background: var(--surface-hover);
+}
+
+.results .link {
+  color: var(--link);
+}
+
 .results .name {
   white-space: nowrap;
 }
@@ -337,19 +349,15 @@ button:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  height: 38px;
-  padding: 0 6px 0 14px;
+  height: 40px;
+  padding: 0 6px 0 10px;
 }
 
-.sidebar-title {
-  overflow: hidden;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--text-muted);
+.tree-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .tree {
@@ -411,6 +419,85 @@ button:focus-visible {
 
 .tree-count {
   font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Key files -------------------------------------------------------- */
+
+.key-files {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 6px 12px;
+}
+
+.key-intro {
+  margin: 2px 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.key-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.key-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.key-row:hover {
+  background: var(--surface-hover);
+}
+
+.key-row.selected {
+  background: rgb(248 250 252 / 9%);
+  box-shadow: inset 2px 0 0 var(--selection);
+}
+
+.key-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.key-name {
+  flex-shrink: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.key-dir {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.key-stats {
+  padding-left: 16px;
+  font-size: 11.5px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -509,6 +596,72 @@ button:focus-visible {
   padding: 4px;
 }
 
+.controls-sep {
+  height: 1px;
+  margin: 2px 4px;
+  background: var(--border);
+}
+
+.export-wrap {
+  position: relative;
+}
+
+.export-menu {
+  right: calc(100% + 10px);
+  bottom: -4px;
+  width: 264px;
+  padding: 4px;
+  animation: fade 0.12s ease;
+}
+
+.export-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.export-item svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.export-item:hover,
+.export-item:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.export-label {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.export-hint {
+  display: block;
+  margin-top: 1px;
+  font-size: 11.5px;
+}
+
+.export-note {
+  margin: 4px 8px 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
 .view-switch {
   top: 14px;
   right: 14px;
@@ -559,6 +712,23 @@ button:focus-visible {
   background: var(--surface-hover);
   color: var(--text);
   box-shadow: 0 1px 2px rgb(0 0 0 / 35%);
+}
+
+/* Shown instead of the graph when the hide switch leaves nothing to draw. */
+.empty-note {
+  top: 50%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 320px;
+  padding: 16px 20px;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--text-muted);
+  transform: translate(-50%, -50%);
 }
 
 .nav-hint {
@@ -884,6 +1054,22 @@ button:focus-visible {
   color: var(--text-faint);
 }
 
+/* A status item that does something when clicked, like showing hidden files. */
+.status-btn {
+  margin: 0 -6px;
+  padding: 1px 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--brand);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.status-btn:hover {
+  background: var(--surface-hover);
+}
+
 .statusbar .keys {
   display: flex;
   align-items: center;
@@ -1115,6 +1301,21 @@ button:focus-visible {
   color: var(--danger-text);
   transform: translateX(-50%);
   animation: rise 0.15s ease-out;
+}
+
+.toast.info {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.toast.info > svg {
+  flex-shrink: 0;
+  color: var(--live);
+}
+
+.toast.info .icon-btn {
+  color: var(--text-muted);
 }
 
 .toast span {

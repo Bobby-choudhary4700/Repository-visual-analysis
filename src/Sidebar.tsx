@@ -1,10 +1,15 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ChevronRight, ChevronsDownUp, Folder, FolderOpen } from "lucide-react";
-import { ROOT } from "./graph";
+import { ROOT, drawnAs } from "./graph";
+import { KeyFiles } from "./KeyFiles";
+import type { KeyFile } from "./ranking";
+import { loadChoice, saveSetting } from "./settings";
 import { nameOf, type TreeIndex } from "./tree";
 
 interface Props {
   tree: TreeIndex;
+  /** The files the rest of the project leans on most, best first. */
+  keyFiles: KeyFile[];
   /** The graph's node colours, so a row matches its node. */
   colorOf: (id: string) => string;
   /** The same open folders as the graph, so both always show the same level of detail. */
@@ -18,6 +23,78 @@ interface Props {
   onCollapseAll: () => void;
 }
 
+type Tab = "files" | "key";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "files", label: "Files" },
+  { id: "key", label: "Key files" },
+];
+const TAB_IDS = TABS.map((t) => t.id);
+
+/** The explorer: every file as a tree, or the key files as a short list. */
+export const Sidebar = memo(function Sidebar({ keyFiles, onCollapseAll, ...treeProps }: Props) {
+  const [tab, setTab] = useState<Tab>(() => loadChoice("rva.sidebarTab", TAB_IDS, "files"));
+  useEffect(() => saveSetting("rva.sidebarTab", tab), [tab]);
+  const { colorOf, expanded, selected, onSelectFile, onHover } = treeProps;
+
+  // The row under the pointer goes away with its tab, so stop tracing it.
+  const pick = (next: Tab) => {
+    setTab(next);
+    onHover(null);
+  };
+
+  // Left and right move between the tabs, as in any tab list.
+  const onTabKey = (e: KeyboardEvent) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const at = TAB_IDS.indexOf(tab);
+    const next = TAB_IDS[(at + (e.key === "ArrowRight" ? 1 : TAB_IDS.length - 1)) % TAB_IDS.length];
+    pick(next);
+    document.getElementById(`sidebar-tab-${next}`)?.focus();
+  };
+
+  return (
+    <nav className="sidebar" aria-label="Project files">
+      <div className="sidebar-head">
+        <div className="segmented" role="tablist" aria-label="Explorer" onKeyDown={onTabKey}>
+          {TABS.map(({ id, label }) => (
+            <button
+              key={id}
+              id={`sidebar-tab-${id}`}
+              role="tab"
+              aria-selected={tab === id}
+              aria-controls={`sidebar-panel-${id}`}
+              tabIndex={tab === id ? 0 : -1}
+              className={tab === id ? "active" : undefined}
+              onClick={() => pick(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {tab === "files" && (
+          <button className="icon-btn" title="Close all folders" onClick={onCollapseAll}>
+            <ChevronsDownUp size={15} />
+          </button>
+        )}
+      </div>
+      {tab === "files" ? (
+        <FileTree {...treeProps} />
+      ) : (
+        <div className="key-files" id="sidebar-panel-key" role="tabpanel" aria-labelledby="sidebar-tab-key">
+          <KeyFiles
+            files={keyFiles}
+            colorOf={colorOf}
+            selected={selected}
+            onSelect={onSelectFile}
+            // A file inside a closed folder is traced through that folder.
+            onHover={(path) => onHover(path && drawnAs(path, expanded))}
+          />
+        </div>
+      )}
+    </nav>
+  );
+});
+
 type Row = { id: string; depth: number; folder: boolean };
 
 /** Every row has this height, which is what lets the list draw only the rows in view. */
@@ -26,10 +103,10 @@ const ROW_HEIGHT = 26;
 const OVERSCAN = 10;
 
 /**
- * File explorer that mirrors the graph: opening a folder here opens it there too. Only the
+ * File tree that mirrors the graph: opening a folder here opens it there too. Only the
  * rows in view are drawn, so a folder of thousands of files opens as fast as a small one.
  */
-export const Sidebar = memo(function Sidebar({
+function FileTree({
   tree,
   colorOf,
   expanded,
@@ -38,8 +115,7 @@ export const Sidebar = memo(function Sidebar({
   onToggle,
   onSelectFile,
   onHover,
-  onCollapseAll,
-}: Props) {
+}: Omit<Props, "keyFiles" | "onCollapseAll">) {
   // Only open folders contribute rows, so a huge project costs no more than what is shown.
   const rows = useMemo(() => {
     const out: Row[] = [];
@@ -87,13 +163,7 @@ export const Sidebar = memo(function Sidebar({
   const last = Math.min(rows.length, Math.ceil((top + viewHeight) / ROW_HEIGHT) + OVERSCAN);
 
   return (
-    <nav className="sidebar" aria-label="Project files">
-      <div className="sidebar-head">
-        <span className="sidebar-title">Explorer</span>
-        <button className="icon-btn" title="Close all folders" onClick={onCollapseAll}>
-          <ChevronsDownUp size={15} />
-        </button>
-      </div>
+    <div className="tree-panel" id="sidebar-panel-files" role="tabpanel" aria-labelledby="sidebar-tab-files">
       <div
         className="tree"
         role="tree"
@@ -142,6 +212,6 @@ export const Sidebar = memo(function Sidebar({
         })}
         <div style={{ height: (rows.length - last) * ROW_HEIGHT }} />
       </div>
-    </nav>
+    </div>
   );
-});
+}

@@ -4,8 +4,10 @@
 //! 1. `walk` lists files on all cores and skips anything `.gitignore` excludes.
 //! 2. `imports` parses only supported source files with tree-sitter, in parallel,
 //!    reusing cached results for files whose size and modified time are unchanged.
-//! 3. `resolve` maps each import specifier to a file inside the project.
+//! 3. `resolve` maps each import specifier to a file inside the project, following
+//!    tsconfig path aliases (`aliases`) for JavaScript and TypeScript.
 
+mod aliases;
 mod cache;
 mod imports;
 mod resolve;
@@ -100,11 +102,16 @@ pub fn scan(root: &Path, cache_dir: Option<&Path>) -> Result<ScanResult, String>
         .map(|(i, e)| (e.rel.as_str(), i as u32))
         .collect();
 
+    // Read on every scan rather than cached, so editing a tsconfig redraws the wires.
+    let paths: Vec<&str> = entries.iter().map(|e| e.rel.as_str()).collect();
+    let aliases = aliases::Aliases::load(&root, &paths);
+
     let mut edges = HashSet::new();
     for (i, entry) in entries.iter().enumerate() {
         let Some(lang) = entry.lang else { continue };
         for spec in &specs[i].0 {
-            for target in resolve::resolve(lang, &entry.rel, spec, |p| index.contains_key(p)) {
+            let exists = |p: &str| index.contains_key(p);
+            for target in resolve::resolve(lang, &entry.rel, spec, &aliases, exists) {
                 let to = index[target.as_str()];
                 if to != i as u32 {
                     edges.insert(Edge { from: i as u32, to });
@@ -244,5 +251,35 @@ mod tests {
         assert_eq!(second.stats.parsed, 0, "unchanged files should come from the cache");
         assert_eq!(second.stats.cached, first.stats.parsed);
         assert_eq!(wires(&second).len(), want.len());
+    }
+
+    #[test]
+    fn follows_tsconfig_path_aliases_and_their_edits() {
+        let project = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let root = project.path();
+        write(root, "tsconfig.json", r#"{ "compilerOptions": { "paths": { "~/*": ["./src/*"] } } }"#);
+        write(root, "src/app.tsx", "import { db } from '~/lib/db';\nimport { Button } from '@/ui';\nimport x from 'react';");
+        write(root, "src/lib/db.ts", "");
+        write(root, "src/ui/index.tsx", "");
+
+        let first = scan(root, Some(cache.path())).unwrap();
+        // `@/` has no rule here, so it falls back to the package's `src/` folder.
+        assert_eq!(
+            wires(&first),
+            [
+                ("src/app.tsx".to_string(), "src/lib/db.ts".to_string()),
+                ("src/app.tsx".to_string(), "src/ui/index.tsx".to_string()),
+            ]
+        );
+
+        // Aliases are read on every scan, so a tsconfig edit counts even for cached files.
+        write(root, "tsconfig.json", r#"{ "compilerOptions": { "paths": { "~/*": ["./missing/*"] } } }"#);
+        let second = scan(root, Some(cache.path())).unwrap();
+        assert!(second.stats.cached > 0);
+        assert_eq!(
+            wires(&second),
+            [("src/app.tsx".to_string(), "src/ui/index.tsx".to_string())]
+        );
     }
 }

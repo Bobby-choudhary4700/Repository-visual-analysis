@@ -70,6 +70,7 @@ export function Graph3DView({
       centre: () => {
         if (selectedRef.current) scene.focusOn(selectedRef.current);
       },
+      positions: () => scene.screenPositions(),
     };
     return () => {
       observer.disconnect();
