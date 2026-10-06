@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Copy, FolderSearch, X } from "lucide-react";
 import { fileColor, typeLabel } from "./colors";
+import { formatSize } from "./format";
 import { absolutePath, dirOf, nameOf } from "./tree";
 import type { FileNode, ScanResult } from "./types";
 
@@ -126,10 +127,4 @@ async function copyText(text: string): Promise<boolean> {
     area.remove();
     return ok;
   }
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }

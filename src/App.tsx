@@ -7,6 +7,7 @@ import {
   Check,
   Crosshair,
   FolderOpen,
+  Funnel,
   LoaderCircle,
   Maximize,
   Orbit,
@@ -22,12 +23,15 @@ import { typeLabel } from "./colors";
 import { ExportMenu, type ExportKind } from "./ExportMenu";
 import { MERMAID_MAX_EDGES, buildMermaid, buildSvg, svgToPng, type ExportInput } from "./exportGraph";
 import { FileDetails } from "./FileDetails";
+import { plural } from "./format";
 import { ROOT, buildVisibleGraph, parentOf } from "./graph";
 import { Graph3DView } from "./Graph3DView";
 import { GraphView, type GraphHandle } from "./GraphView";
 import { Legend } from "./Legend";
 import { Logo } from "./Logo";
+import { isNoise, withoutNoise } from "./noise";
 import { MOD_KEY, prefersReducedMotion } from "./platform";
+import { rankKeyFiles } from "./ranking";
 import { forgetRecent, loadRecent, rememberRecent } from "./recent";
 import { saveFile } from "./saveFile";
 import { SearchBox } from "./SearchBox";
@@ -62,6 +66,9 @@ export default function App() {
     loadChoice("rva.colorMode", COLOR_MODES.map((m) => m.id), "type"),
   );
   const [autoRotate, setAutoRotate] = useState(() => loadFlag("rva.autoRotate", false));
+  /** Leave tests, docs, examples and generated files out of the graph and the explorer. */
+  const [hideNoise, setHideNoise] = useState(() => loadFlag("rva.hideNoise", false));
+  const hideNoiseRef = useRef(hideNoise);
   /** The 3D controls hint shows until the camera has been moved once. */
   const [navHintSeen, setNavHintSeen] = useState(() => loadFlag("rva.navHintSeen", false));
   /** The legend entry being pointed at, whose nodes stay lit. */
@@ -76,7 +83,7 @@ export default function App() {
       const result = await invoke<ScanResponse>("scan_repository", { path, watch: true });
       openPath.current = path;
       setScan(result);
-      setExpanded(initialExpansion(result));
+      setExpanded(initialExpansion(hideNoiseRef.current ? withoutNoise(result) : result));
       setSelected(null);
       setTreeHover(null);
       setRecent(rememberRecent(path));
@@ -169,9 +176,25 @@ export default function App() {
     [expanded, collapse, expand],
   );
 
+  // What the graph, explorer, search and details panel show: the scan, without the hidden files.
+  const view = useMemo(() => (scan && hideNoise ? withoutNoise(scan) : scan), [scan, hideNoise]);
+
   const collapseAll = useCallback(() => {
-    if (scan) setExpanded(initialExpansion(scan));
-  }, [scan]);
+    if (view) setExpanded(initialExpansion(view));
+  }, [view]);
+
+  // Hiding files can leave one folder alone at the top, so its single-folder chain opens as
+  // it does for a new project. A selected file that gets hidden is let go, and the camera
+  // frames the whole graph again, since a large part of it may have come or gone.
+  const toggleNoise = useCallback(() => {
+    if (!scan) return;
+    const hide = !hideNoise;
+    setHideNoise(hide);
+    if (hide) setSelected((sel) => (sel && isNoise(sel) ? null : sel));
+    const opened = initialExpansion(hide ? withoutNoise(scan) : scan);
+    setExpanded((prev) => new Set([...prev, ...opened]));
+    graphApi.current?.fit();
+  }, [scan, hideNoise]);
 
   const revealInFileManager = useCallback(async (path: string) => {
     try {
@@ -203,22 +226,34 @@ export default function App() {
       else if (e.key === "-") graphApi.current?.zoomOut();
       else if (key === "v") setViewMode((v) => (v === "3d" ? "2d" : "3d"));
       else if (key === "r") setAutoRotate((on) => !on);
+      else if (key === "h") toggleNoise();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [chooseFolder]);
+  }, [chooseFolder, toggleNoise]);
 
   useEffect(() => saveSetting("rva.viewMode", viewMode), [viewMode]);
   useEffect(() => saveSetting("rva.colorMode", colorMode), [colorMode]);
   useEffect(() => saveSetting("rva.autoRotate", autoRotate), [autoRotate]);
+  useEffect(() => {
+    hideNoiseRef.current = hideNoise;
+    saveSetting("rva.hideNoise", hideNoise);
+  }, [hideNoise]);
   useEffect(() => saveSetting("rva.navHintSeen", navHintSeen), [navHintSeen]);
   const dismissNavHint = useCallback(() => setNavHintSeen(true), []);
 
-  const tree = useMemo(() => (scan ? buildTreeIndex(scan.files) : null), [scan]);
+  const tree = useMemo(() => (view ? buildTreeIndex(view.files) : null), [view]);
+  // Ranked on the whole scan, since the ranking leaves hidden files out by itself.
+  const keyFiles = useMemo(() => (scan ? rankKeyFiles(scan) : []), [scan]);
+  // Hidden files, so search can say when only they match.
+  const hiddenFiles = useMemo(
+    () => (scan && hideNoise ? scan.files.filter((f) => isNoise(f.path)) : []),
+    [scan, hideNoise],
+  );
 
   const visible = useMemo(
-    () => (scan ? buildVisibleGraph(scan, expanded) : { nodes: [], edges: [] }),
-    [scan, expanded],
+    () => (view ? buildVisibleGraph(view, expanded) : { nodes: [], edges: [] }),
+    [view, expanded],
   );
 
   // Wires in and out of each drawn node, counting every file-level import they stand for.
@@ -236,7 +271,7 @@ export default function App() {
     return counts;
   }, [visible]);
 
-  const project = useMemo(() => (scan && tree ? projectColors(scan.files, tree) : null), [scan, tree]);
+  const project = useMemo(() => (view && tree ? projectColors(view.files, tree) : null), [view, tree]);
   // Only the links colouring depends on which folders are open.
   const linkDegree = colorMode === "links" ? degree : null;
   const coloring = useMemo(
@@ -288,15 +323,16 @@ export default function App() {
   const runExport = useCallback(
     async (kind: ExportKind) => {
       const api = graphApi.current;
-      if (!scan || !api) return;
-      const title = baseName(scan.root);
+      if (!view || !api) return;
+      const title = baseName(view.root);
       // Only the colours the drawn nodes use go in the picture's key.
       const used = new Set(visible.nodes.map((n) => coloring?.keyOf(n.id)));
       const input: ExportInput = {
         title,
         nodes: visible.nodes,
         edges: visible.edges,
-        imports: scan.edges.length,
+        imports: view.edges.length,
+        note: view !== scan ? "tests, docs and examples hidden" : undefined,
         colorOf,
         key: (coloring?.entries ?? []).filter((e) => used.has(e.key)),
       };
@@ -330,7 +366,7 @@ export default function App() {
         setExporting(false);
       }
     },
-    [scan, visible, coloring, colorOf],
+    [scan, view, visible, coloring, colorOf],
   );
 
   const viewProps = {
@@ -372,7 +408,9 @@ export default function App() {
           )}
         </div>
         <div className="topbar-center">
-          {scan && <SearchBox files={scan.files} onPick={reveal} />}
+          {view && (
+            <SearchBox files={view.files} hiddenFiles={hiddenFiles} onPick={reveal} onShowHidden={toggleNoise} />
+          )}
         </div>
         <button
           className="btn"
@@ -386,11 +424,12 @@ export default function App() {
       </header>
 
       <div className="workspace">
-        {scan && tree ? (
+        {scan && view && tree ? (
           <>
             {sidebarOpen && (
               <Sidebar
                 tree={tree}
+                keyFiles={keyFiles}
                 colorOf={colorOf}
                 expanded={expanded}
                 selected={selected}
@@ -438,7 +477,27 @@ export default function App() {
                     <Orbit size={16} />
                   </button>
                 )}
+                <button
+                  className={hideNoise ? "icon-btn active" : "icon-btn"}
+                  title={
+                    hideNoise
+                      ? "Show tests, docs, examples and generated files (H)"
+                      : "Hide tests, docs, examples and generated files (H)"
+                  }
+                  aria-pressed={hideNoise}
+                  onClick={toggleNoise}
+                >
+                  <Funnel size={16} />
+                </button>
               </div>
+              {view.files.length === 0 && scan.files.length > 0 && (
+                <div className="empty-note floating" role="note">
+                  <span>Every file in this project is a test, doc, example or generated file.</span>
+                  <button className="btn small" onClick={toggleNoise}>
+                    Show them
+                  </button>
+                </div>
+              )}
               {viewMode === "3d" && !navHintSeen && (
                 <div className="nav-hint floating" role="note">
                   Drag to turn · Scroll to zoom · Right-drag to move
@@ -478,7 +537,7 @@ export default function App() {
             </main>
             {selected && (
               <FileDetails
-                scan={scan}
+                scan={view}
                 path={selected}
                 onSelect={reveal}
                 onReveal={revealInFileManager}
@@ -530,7 +589,14 @@ export default function App() {
         )}
       </div>
 
-      {scan && <StatusBar scan={scan} shown={visible.nodes.length} />}
+      {scan && view && (
+        <StatusBar
+          scan={view}
+          shown={visible.nodes.length}
+          hidden={hideNoise ? scan.files.length - view.files.length : null}
+          onToggleHidden={toggleNoise}
+        />
+      )}
 
       {dragging && (
         <div className="drop-overlay">
@@ -557,8 +623,4 @@ function initialExpansion(scan: ScanResult): Set<string> {
 /** A project name made safe to start a file name with. */
 function fileStem(name: string): string {
   return name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-").replace(/^[.\s-]+|[.\s-]+$/g, "") || "project";
-}
-
-function plural(n: number, word: string): string {
-  return `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 }

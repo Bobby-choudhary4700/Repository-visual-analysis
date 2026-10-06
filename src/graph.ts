@@ -28,6 +28,14 @@ export function parentOf(id: string): string {
   return cut < 0 ? ROOT : trimmed.slice(0, cut + 1);
 }
 
+/** The node that draws a file: its highest closed folder, or the file itself when every
+ * folder above it is open. */
+export function drawnAs(path: string, expanded: Set<string>): string {
+  let drawn = path;
+  for (let dir = parentOf(path); dir !== ROOT; dir = parentOf(dir)) if (!expanded.has(dir)) drawn = dir;
+  return drawn;
+}
+
 export function buildVisibleGraph(
   scan: ScanResult,
   expanded: Set<string>,

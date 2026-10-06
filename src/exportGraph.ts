@@ -14,8 +14,10 @@ export interface ExportInput {
   title: string;
   nodes: VisibleNode[];
   edges: VisibleEdge[];
-  /** File-level imports in the whole project, including those inside closed folders. */
+  /** File-level imports among the files shown, including those inside closed folders. */
   imports: number;
+  /** Said after the summary, such as which files were left out. */
+  note?: string;
   colorOf: (id: string) => string;
   /** Legend entries for the colours the picture uses, in legend order. */
   key: { label: string; color: string }[];
@@ -239,7 +241,9 @@ export function buildSvg(
 function summary(input: ExportInput): string {
   const files = input.nodes.reduce((sum, n) => sum + n.fileCount, 0);
   const plural = (n: number, word: string) => `${n.toLocaleString("en")} ${word}${n === 1 ? "" : "s"}`;
-  return `${plural(files, "file")} · ${plural(input.imports, "import")} · ${plural(input.nodes.length, "node")} shown`;
+  const parts = [plural(files, "file"), plural(input.imports, "import"), `${plural(input.nodes.length, "node")} shown`];
+  if (input.note) parts.push(input.note);
+  return parts.join(" · ");
 }
 
 /** The largest side and area a PNG gets, which every webview can still draw on one canvas. */
@@ -295,7 +299,8 @@ export function buildMermaid(input: ExportInput): string {
   };
   for (const n of input.nodes) groupOf(n.parent).nodes.push(n);
 
-  const lines = [`flowchart LR`, `  %% ${mermaidText(input.title)}, drawn by Repository Visual Analysis`];
+  const note = input.note ? ` (${mermaidText(input.note)})` : "";
+  const lines = [`flowchart LR`, `  %% ${mermaidText(input.title)}, drawn by Repository Visual Analysis${note}`];
   let subgraphs = 0;
   const write = (folder: string, indent: string) => {
     const group = childrenOf.get(folder)!;
