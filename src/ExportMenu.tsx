@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ClipboardCopy, Eye, FileCode2, FileImage, History, ImageDown, LoaderCircle, Workflow } from "lucide-react";
+import { ClipboardCopy, Eye, FileCode2, FileImage, History, ImageDown, Workflow } from "lucide-react";
+import { NodeLoader } from "./NodeLoader";
 
 export type ExportKind = "png" | "svg" | "mermaid" | "copy-mermaid" | "viewer";
 
@@ -72,7 +73,7 @@ export function ExportMenu({
         disabled={busy}
         onClick={() => setOpen((o) => !o)}
       >
-        {busy ? <LoaderCircle size={16} className="spin" /> : <ImageDown size={16} />}
+        {busy ? <NodeLoader size={18} /> : <ImageDown size={16} />}
       </button>
       {open && (
         <div className="export-menu floating" role="menu" aria-label="Export the graph" ref={menuRef}>

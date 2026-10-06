@@ -7,7 +7,6 @@ import {
   Check,
   Crosshair,
   Funnel,
-  LoaderCircle,
   Maximize,
   Orbit,
   TriangleAlert,
@@ -52,6 +51,7 @@ import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
 import { TitleBar } from "./TitleBar";
 import { THEME_KEY, applyTheme, isTheme, loadTheme, saveTheme, type Theme } from "./theme";
+import { NodeLoader } from "./NodeLoader";
 import type { NodeInfo } from "./Tooltip";
 import { baseName, buildTreeIndex, nameOf } from "./tree";
 import { closeWindow, minimizeWindow, toggleFullscreen, toggleMaximize, watchMaximized } from "./windowControls";
@@ -911,9 +911,9 @@ export default function App() {
 
           {scanning && (
             <div className="overlay" role="status">
-              <div className="overlay-card">
-                <LoaderCircle size={28} className="spin" />
-                <div>
+              <div className="overlay-card loading">
+                <NodeLoader size={120} />
+                <div className="overlay-title">
                   Scanning <strong>{baseName(scanning)}</strong>…
                 </div>
                 <div className="muted">

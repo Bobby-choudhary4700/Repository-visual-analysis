@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileCode2, FileImage, FolderSearch, History, LoaderCircle, RefreshCw, Search, Trash2, Workflow, X } from "lucide-react";
+import { FileCode2, FileImage, FolderSearch, History, RefreshCw, Search, Trash2, Workflow, X } from "lucide-react";
 import { Dialog } from "./Dialog";
 import {
   clearExports,
@@ -10,6 +10,7 @@ import {
   type ExportEntry,
 } from "./exports";
 import { formatSize, timeAgo } from "./format";
+import { NodeLoader } from "./NodeLoader";
 
 const KIND_ICON: Record<string, typeof FileImage> = { png: FileImage, svg: FileCode2, mmd: Workflow };
 const KIND_LABEL: Record<string, string> = { png: "PNG", svg: "SVG", mmd: "Mermaid" };
@@ -94,7 +95,7 @@ export function ExportManager({ onClose, onError }: { onClose: () => void; onErr
         <p className="dialog-empty">The export list is kept by the desktop app. Exports from a browser go to Downloads.</p>
       ) : entries === null ? (
         <p className="dialog-empty">
-          <LoaderCircle size={16} className="spin" /> Reading the list…
+          <NodeLoader size={20} /> Reading the list…
         </p>
       ) : entries.length === 0 ? (
         <p className="dialog-empty">
