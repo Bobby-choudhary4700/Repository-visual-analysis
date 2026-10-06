@@ -14,7 +14,8 @@
   --text-muted: #94a3b8;
   --text-faint: #64748b;
 
-  --accent: #f472b6;
+  /* Selection is white in the graph, so it never looks like one of the data colours. */
+  --selection: #f8fafc;
   --brand: #38bdf8;
   --link: #93c5fd;
   --live: #22c55e;
@@ -66,12 +67,22 @@ kbd {
   background: var(--surface-raised);
 }
 
+/* A colour swatch; set its colour with `color`. */
 .dot {
   display: inline-block;
   flex-shrink: 0;
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  background: currentColor;
+}
+
+/* Folders: a ring around a dot, as in the graph. */
+.dot.ring {
+  width: 10px;
+  height: 10px;
+  background: radial-gradient(circle, currentColor 0 1.6px, transparent 2.2px);
+  box-shadow: inset 0 0 0 2px currentColor;
 }
 
 .dot.large {
@@ -366,8 +377,8 @@ button:focus-visible {
 }
 
 .tree-row.selected {
-  background: rgb(244 114 182 / 16%);
-  box-shadow: inset 2px 0 0 var(--accent);
+  background: rgb(248 250 252 / 9%);
+  box-shadow: inset 2px 0 0 var(--selection);
 }
 
 .chev {
@@ -416,10 +427,42 @@ button:focus-visible {
   background-size: 22px 22px;
 }
 
+/* The 3D view floats in space: no dot grid, just a soft glow behind the graph. */
+.canvas.space {
+  background-image: radial-gradient(ellipse at 50% 42%, #14213b 0%, var(--bg) 58%, #070b15 100%);
+  background-size: 100% 100%;
+}
+
 .graph-wrap,
-.graph {
+.graph,
+.graph3d {
   position: absolute;
   inset: 0;
+}
+
+.graph3d {
+  overflow: hidden;
+  animation: fade 0.4s ease-out;
+}
+
+/* Node names in the 3D view, drawn as HTML over the canvas. */
+.label3d {
+  padding-bottom: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #cbd5e1;
+  white-space: nowrap;
+  text-shadow:
+    0 0 3px var(--bg),
+    0 0 6px var(--bg),
+    0 1px 2px var(--bg);
+  pointer-events: none;
+}
+
+.label3d.focus,
+.label3d.selected {
+  font-weight: 650;
+  color: var(--selection);
 }
 
 .graph {
@@ -466,19 +509,144 @@ button:focus-visible {
   padding: 4px;
 }
 
+.view-switch {
+  top: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+}
+
+.view-switch .icon-btn[aria-pressed="true"] {
+  background: var(--surface-hover);
+  color: var(--brand);
+}
+
+.icon-btn.small {
+  width: 24px;
+  height: 24px;
+}
+
+/* A row of mutually exclusive choices, like 2D / 3D. */
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.segmented button {
+  min-width: 34px;
+  padding: 3px 9px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.segmented button:hover {
+  color: var(--text);
+}
+
+.segmented button.active {
+  background: var(--surface-hover);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 35%);
+}
+
+.nav-hint {
+  top: 14px;
+  left: 50%;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+  animation: fade 0.3s ease;
+}
+
 .legend {
   left: 14px;
   bottom: 14px;
-  min-width: 160px;
-  padding: 10px 12px;
+  width: 268px;
+  max-width: calc(100% - 90px);
+  max-height: calc(100% - 28px);
+  overflow-y: auto;
+  padding: 8px 8px 10px;
   font-size: 12px;
+}
+
+.legend-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 4px;
+}
+
+.legend-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.legend-head .icon-btn {
+  margin-left: auto;
+}
+
+.chev-flip {
+  transition: transform 0.15s ease;
+}
+
+.chev-flip.open {
+  transform: rotate(180deg);
+}
+
+.legend-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
 .legend-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 0;
+  width: 100%;
+  padding: 3px 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  font-size: 12px;
+  text-align: left;
+  cursor: default;
+}
+
+.legend-row:hover,
+.legend-row.active {
+  background: var(--surface-hover);
+}
+
+.legend-row.static:hover {
+  background: none;
+}
+
+.legend-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .legend-count {
@@ -488,11 +656,41 @@ button:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
+.legend-ramp {
+  margin-top: 8px;
+  padding: 0 4px;
+}
+
+.ramp-bar {
+  height: 10px;
+  border-radius: 3px;
+}
+
+.ramp-labels {
+  display: flex;
+  justify-content: space-between;
+  margin: 3px 0 4px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.legend-ramp .legend-row {
+  padding-left: 0;
+}
+
 .legend-note {
-  margin-top: 6px;
-  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 4px 0;
+  padding-top: 7px;
   border-top: 1px solid var(--border);
   color: var(--text-faint);
+}
+
+.legend-note .dot {
+  margin-right: 6px;
+  vertical-align: -1px;
 }
 
 .tooltip {
@@ -822,6 +1020,11 @@ button:focus-visible {
   background: none;
   text-align: left;
   cursor: pointer;
+}
+
+.recent-icon {
+  flex-shrink: 0;
+  color: var(--brand);
 }
 
 .recent-name {

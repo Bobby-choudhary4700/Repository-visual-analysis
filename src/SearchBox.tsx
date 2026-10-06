@@ -84,7 +84,7 @@ export function SearchBox({ files, onPick }: Props) {
                   pick(file.path);
                 }}
               >
-                <span className="dot" style={{ background: fileColor(file.lang) }} />
+                <span className="dot" style={{ color: fileColor(file.path) }} />
                 <span className="name">{file.path.slice(cut + 1)}</span>
                 <span className="dir">{cut > 0 ? file.path.slice(0, cut) : ""}</span>
               </li>

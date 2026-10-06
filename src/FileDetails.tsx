@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Copy, FolderSearch, X } from "lucide-react";
-import { fileColor, langLabel } from "./colors";
+import { fileColor, typeLabel } from "./colors";
 import { absolutePath, dirOf, nameOf } from "./tree";
 import type { FileNode, ScanResult } from "./types";
 
@@ -45,7 +45,7 @@ export function FileDetails({ scan, path, onSelect, onReveal, onClose }: Props) 
   return (
     <aside className="details" aria-label="File details">
       <div className="details-head">
-        <span className="dot large" style={{ background: fileColor(file.lang) }} />
+        <span className="dot large" style={{ color: fileColor(path) }} />
         <div className="details-title">
           <div className="details-name">{nameOf(path)}</div>
           <div className="details-dir">{dirOf(path) || "project root"}</div>
@@ -56,7 +56,7 @@ export function FileDetails({ scan, path, onSelect, onReveal, onClose }: Props) 
       </div>
 
       <div className="chips">
-        <span className="chip">{langLabel(file.lang)}</span>
+        <span className="chip">{typeLabel(path)}</span>
         <span className="chip">{formatSize(file.size)}</span>
       </div>
 
@@ -98,7 +98,7 @@ function FileList({
           {files.map((f) => (
             <li key={f.path}>
               <button className="dep" title={f.path} onClick={() => onSelect(f.path)}>
-                <span className="dot" style={{ background: fileColor(f.lang) }} />
+                <span className="dot" style={{ color: fileColor(f.path) }} />
                 <span className="dep-name">{nameOf(f.path)}</span>
                 <span className="dep-dir">{dirOf(f.path)}</span>
               </button>
