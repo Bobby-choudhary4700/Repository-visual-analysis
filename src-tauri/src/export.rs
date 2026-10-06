@@ -16,11 +16,19 @@ const KINDS: &[(&str, &str)] = &[
 
 /// The suggested file name arrives URL-encoded in this header; the body is the file.
 const NAME_HEADER: &str = "x-file-name";
+/// The project the export came from, URL-encoded, for the export manager's list.
+const PROJECT_HEADER: &str = "x-project-name";
 
-/// Asks where to save the file the UI sent, then writes it there. Returns the saved
-/// file's name, or `None` when the user cancelled the dialog.
+/// Diagram files the Mermaid viewer opens, and the most it reads of one.
+const MERMAID_KINDS: &[&str] = &["mmd", "mermaid", "md", "markdown", "txt"];
+const MERMAID_MAX_BYTES: u64 = 5 * 1024 * 1024;
+
+/// Asks where to save the file the UI sent, then writes it there and adds it to the
+/// export manager's list. Returns the saved file's name, or `None` when the user
+/// cancelled the dialog.
 #[tauri::command]
 pub async fn save_export(
+    app: tauri::AppHandle,
     window: tauri::Window,
     request: Request<'_>,
 ) -> Result<Option<String>, String> {
@@ -34,6 +42,12 @@ pub async fn save_export(
         .map(percent_decode)
         .ok_or("the export arrived without a file name")?;
     let (extension, label) = kind_of(&name)?;
+    let project = request
+        .headers()
+        .get(PROJECT_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(percent_decode)
+        .filter(|p| !p.is_empty());
 
     let mut dialog = window
         .dialog()
@@ -53,11 +67,58 @@ pub async fn save_export(
     };
     let path = with_extension(chosen.into_path().map_err(|e| e.to_string())?, extension);
     std::fs::write(&path, data).map_err(|e| format!("Could not save {}: {e}", path.display()))?;
+    crate::history::record(&app, &path, project);
     Ok(Some(
         path.file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or(name),
     ))
+}
+
+/// A Mermaid file the user picked: its name and text.
+#[derive(serde::Serialize)]
+pub struct MermaidFile {
+    name: String,
+    text: String,
+}
+
+/// Asks which Mermaid diagram to open and returns it, or `None` when the user cancelled.
+/// The dialog runs here, so the UI can only read a file the user just picked, and only
+/// diagram and text files of a sensible size.
+#[tauri::command]
+pub async fn open_mermaid_file(window: tauri::Window) -> Result<Option<MermaidFile>, String> {
+    let mut dialog = window
+        .dialog()
+        .file()
+        .set_title("Open a Mermaid diagram")
+        .add_filter("Mermaid diagram", MERMAID_KINDS);
+    #[cfg(desktop)]
+    {
+        dialog = dialog.set_parent(&window);
+    }
+    let Some(chosen) = dialog.blocking_pick_file() else {
+        return Ok(None);
+    };
+    let path = chosen.into_path().map_err(|e| e.to_string())?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "diagram.mmd".into());
+    let extension = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase());
+    if !extension.is_some_and(|e| MERMAID_KINDS.contains(&e.as_str())) {
+        return Err(format!("{name} is not a Mermaid or text file"));
+    }
+    let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+    if size > MERMAID_MAX_BYTES {
+        return Err(format!("{name} is too large to be a diagram"));
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("Could not read {name}: {e}"))?;
+    Ok(Some(MermaidFile {
+        name,
+        text: String::from_utf8_lossy(&bytes).into_owned(),
+    }))
 }
 
 /// The extension and dialog label for a suggested file name, refusing other kinds and

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -13,6 +13,7 @@ import {
   Maximize,
   Orbit,
   PanelLeft,
+  Settings,
   SquarePlus,
   TriangleAlert,
   Upload,
@@ -32,31 +33,81 @@ import {
   svgToPng,
   type ExportInput,
 } from "./exportGraph";
+import { ExportManager } from "./ExportManager";
 import { FileDetails } from "./FileDetails";
 import { FolderDetails } from "./FolderDetails";
 import { plural } from "./format";
 import { ROOT, buildVisibleGraph, parentOf } from "./graph";
 import { Graph3DView } from "./Graph3DView";
 import { GraphView, type GraphHandle } from "./GraphView";
+import { AboutDialog, ShortcutsDialog } from "./InfoDialogs";
 import { Legend } from "./Legend";
 import { Logo } from "./Logo";
 import { MermaidViewer } from "./MermaidViewer";
+import { mermaidSource } from "./mermaidRender";
 import { isNoise, withoutNoise } from "./noise";
 import { MOD_KEY, prefersReducedMotion } from "./platform";
 import { rankKeyFiles } from "./ranking";
-import { forgetRecent, loadRecent, rememberRecent } from "./recent";
+import { RECENT_KEY, clearRecent, forgetRecent, loadRecent, rememberRecent } from "./recent";
 import { saveFile } from "./saveFile";
 import { SearchBox } from "./SearchBox";
 import { loadChoice, loadFlag, saveSetting } from "./settings";
+import { SettingsDialog, type Preferences, type ViewMode } from "./SettingsDialog";
 import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
+import { THEME_KEY, applyTheme, isTheme, loadTheme, saveTheme, type Theme } from "./theme";
 import type { NodeInfo } from "./Tooltip";
 import { baseName, buildTreeIndex, nameOf } from "./tree";
 import type { ScanResponse, ScanResult } from "./types";
 import { Welcome } from "./Welcome";
 
-type ViewMode = "3d" | "2d";
 const VIEW_MODES: readonly ViewMode[] = ["3d", "2d"];
+
+/** The windows the app opens over the graph, from the menu bar or the top bar. */
+type DialogKind = "settings" | "exports" | "about" | "shortcuts";
+
+/**
+ * What the menu bar, the shortcuts and the buttons ask for. The menu bar's ids are these
+ * names (see src-tauri/src/menu.rs).
+ */
+type Action =
+  | "open-folder"
+  | "open-recent"
+  | "clear-recent"
+  | "mermaid-open-file"
+  | "mermaid-viewer"
+  | "settings"
+  | "export-manager"
+  | "about"
+  | "shortcuts"
+  | "close-folder"
+  | "new-window"
+  | "find"
+  | "toggle-explorer"
+  | "view-3d"
+  | "view-2d"
+  | "color-type"
+  | "color-folder"
+  | "color-links"
+  | "auto-rotate"
+  | "hide-noise"
+  | "zoom-in"
+  | "zoom-out"
+  | "fit"
+  | "theme-dark"
+  | "theme-light"
+  | "theme-system"
+  | "export-png"
+  | "export-svg"
+  | "export-mermaid"
+  | "copy-mermaid"
+  | "export-viewer";
+
+/**
+ * A shortcut can reach the page and the menu bar both, depending on the system; the
+ * same action twice within this long is taken as one.
+ */
+const REPEAT_MS = 400;
 
 export default function App() {
   const [scan, setScan] = useState<ScanResponse | null>(null);
@@ -85,8 +136,16 @@ export default function App() {
   const [navHintSeen, setNavHintSeen] = useState(() => loadFlag("rva.navHintSeen", false));
   /** The legend entry being pointed at, whose nodes stay lit. */
   const [legendHover, setLegendHover] = useState<string | null>(null);
-  /** The Mermaid viewer's starting text while it is open, or `null` when it is closed. */
-  const [mermaidDoc, setMermaidDoc] = useState<{ text: string; name: string } | null>(null);
+  /**
+   * The Mermaid viewer's starting text while it is open, or `null` when it is closed. A
+   * new `rev` starts the viewer afresh, as when a file is opened into it.
+   */
+  const [mermaidDoc, setMermaidDoc] = useState<{ text: string; name: string; rev?: number } | null>(null);
+  const [theme, setTheme] = useState<Theme>(loadTheme);
+  const [reopenLast, setReopenLast] = useState(() => loadFlag("rva.reopenLast", false));
+  const [dialog, setDialog] = useState<DialogKind | null>(null);
+  const dialogOpenRef = useRef(false);
+  dialogOpenRef.current = dialog !== null;
   const mermaidOpenRef = useRef(false);
   /** What the viewer held when it was last closed, so reopening it picks up there. */
   const mermaidDraft = useRef({ text: "", name: "diagram" });
@@ -250,27 +309,152 @@ export default function App() {
     }
   }, []);
 
+  // Opens a diagram file in the Mermaid viewer. The app's own dialog picks and reads it;
+  // in a plain browser the viewer opens and its Open file button does the picking.
+  const openMermaidFile = useCallback(async () => {
+    if (!isTauri()) {
+      setMermaidDoc((doc) => doc ?? mermaidDraft.current);
+      return;
+    }
+    try {
+      const file = await invoke<{ name: string; text: string } | null>("open_mermaid_file");
+      if (!file) return;
+      setMermaidDoc({
+        text: mermaidSource(file.text, file.name),
+        name: file.name.replace(/\.[^.]+$/, "") || "diagram",
+        rev: Date.now(),
+      });
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
+  const changePrefs = useCallback(
+    (change: Partial<Preferences>) => {
+      if (change.theme) setTheme(change.theme);
+      if (change.viewMode) setViewMode(change.viewMode);
+      if (change.colorMode) setColorMode(change.colorMode);
+      if (change.autoRotate !== undefined) setAutoRotate(change.autoRotate);
+      if (change.hideNoise !== undefined && change.hideNoise !== hideNoise) {
+        if (scan) toggleNoise();
+        else setHideNoise(change.hideNoise);
+      }
+      if (change.navHintSeen !== undefined) setNavHintSeen(change.navHintSeen);
+      if (change.reopenLast !== undefined) setReopenLast(change.reopenLast);
+    },
+    [hideNoise, scan, toggleNoise],
+  );
+
+  // Graph actions only mean something with a project open.
+  const runExportRef = useRef<(kind: ExportKind) => void>(() => {});
+  const lastAction = useRef({ action: "", at: 0 });
+  const runAction = useCallback(
+    (action: Action, path?: string) => {
+      const now = performance.now();
+      if (lastAction.current.action === action && now - lastAction.current.at < REPEAT_MS) return;
+      lastAction.current = { action, at: now };
+      const graph = graphApi.current;
+      switch (action) {
+        case "open-folder":
+          return void chooseFolder();
+        case "open-recent":
+          if (path) void openProject(path);
+          return;
+        case "clear-recent":
+          return setRecent(clearRecent());
+        case "mermaid-open-file":
+          return void openMermaidFile();
+        case "mermaid-viewer":
+          return setMermaidDoc((doc) => doc ?? mermaidDraft.current);
+        case "settings":
+          return setDialog("settings");
+        case "export-manager":
+          return setDialog("exports");
+        case "about":
+          return setDialog("about");
+        case "shortcuts":
+          return setDialog("shortcuts");
+        case "close-folder":
+          if (openPath.current !== null) goHome();
+          return;
+        case "new-window":
+          return void openNewWindow();
+        case "find":
+          return document.querySelector<HTMLInputElement>(".search input")?.focus();
+        case "toggle-explorer":
+          return setSidebarOpen((open) => !open);
+        case "view-3d":
+        case "view-2d":
+          return setViewMode(action === "view-3d" ? "3d" : "2d");
+        case "color-type":
+        case "color-folder":
+        case "color-links":
+          return setColorMode(action.slice("color-".length) as ColorMode);
+        case "auto-rotate":
+          return setAutoRotate((on) => !on);
+        case "hide-noise":
+          return toggleNoise();
+        case "zoom-in":
+          return graph?.zoomIn();
+        case "zoom-out":
+          return graph?.zoomOut();
+        case "fit":
+          return graph?.fit();
+        case "theme-dark":
+        case "theme-light":
+        case "theme-system":
+          return setTheme(action.slice("theme-".length) as Theme);
+        case "export-png":
+        case "export-svg":
+        case "export-mermaid":
+        case "copy-mermaid":
+        case "export-viewer": {
+          if (!graph) return setNotice("Open a project first, then export its graph.");
+          const kinds: Record<string, ExportKind> = {
+            "export-png": "png",
+            "export-svg": "svg",
+            "export-mermaid": "mermaid",
+            "copy-mermaid": "copy-mermaid",
+            "export-viewer": "viewer",
+          };
+          return runExportRef.current(kinds[action]);
+        }
+      }
+    },
+    [chooseFolder, openProject, openMermaidFile, goHome, openNewWindow, toggleNoise],
+  );
+
+  // The menu bar's items arrive as events for this window.
+  const runActionRef = useRef(runAction);
+  runActionRef.current = runAction;
+  useEffect(() => {
+    const pending = Promise.resolve().then(() =>
+      getCurrentWebviewWindow().listen<{ action: Action; path: string | null }>("menu", ({ payload }) => {
+        runActionRef.current(payload.action, payload.path ?? undefined);
+      }),
+    );
+    return () => {
+      pending.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
-      if (mod && e.shiftKey && key === "n") {
+      const command = (action: Action) => {
         e.preventDefault();
-        void openNewWindow();
-        return;
-      }
-      // The Mermaid viewer has its own keys while it is open.
-      if (mermaidOpenRef.current) return;
-      if (mod && key === "o") {
-        e.preventDefault();
-        void chooseFolder();
-        return;
-      }
-      if (mod && key === "b") {
-        e.preventDefault();
-        setSidebarOpen((open) => !open);
-        return;
-      }
+        runAction(action);
+      };
+      if (mod && e.shiftKey && key === "n") return command("new-window");
+      // The Mermaid viewer and the dialogs have their own keys while they are open.
+      if (mermaidOpenRef.current || dialogOpenRef.current) return;
+      if (mod && e.key === ",") return command("settings");
+      if (mod && (e.key === "/" || e.key === "?")) return command("shortcuts");
+      if (mod && e.shiftKey && key === "e") return command("export-manager");
+      if (mod && e.shiftKey && key === "m") return command("mermaid-viewer");
+      if (mod && key === "o") return command("open-folder");
+      if (mod && key === "b") return command("toggle-explorer");
       const typing = (e.target as HTMLElement | null)?.closest("input, textarea");
       if (typing || mod || e.altKey) return;
       if (e.key === "Escape") setSelected(null);
@@ -283,7 +467,41 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [chooseFolder, openNewWindow, toggleNoise]);
+  }, [runAction, toggleNoise]);
+
+  // The theme applies at once, is remembered, and follows a change made in another window.
+  useEffect(() => {
+    saveTheme(theme);
+    return applyTheme(theme);
+  }, [theme]);
+  useEffect(() => saveSetting("rva.reopenLast", reopenLast), [reopenLast]);
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === THEME_KEY && isTheme(e.newValue)) setTheme(e.newValue);
+      else if (e.key === RECENT_KEY) setRecent(loadRecent());
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // The menu bar's Open Recent lists the same folders as the home screen.
+  useEffect(() => {
+    if (isTauri()) invoke("set_recent_menu", { paths: recent }).catch(() => {});
+  }, [recent]);
+
+  // With the preference on, the first window opens the last project at start-up.
+  useEffect(() => {
+    if (!reopenLast) return;
+    let label = "main";
+    try {
+      label = getCurrentWebviewWindow().label;
+    } catch {
+      // A plain browser has one page, which counts as the first window.
+    }
+    const last = loadRecent()[0];
+    if (label === "main" && last) void openProject(last);
+    // Only at start-up, not whenever the preference is switched on.
+  }, []);
 
   useEffect(() => saveSetting("rva.viewMode", viewMode), [viewMode]);
   useEffect(() => saveSetting("rva.colorMode", colorMode), [colorMode]);
@@ -419,11 +637,11 @@ export default function App() {
         }
         let saved: string | null;
         if (kind === "mermaid") {
-          saved = await saveFile(`${stem}.mmd`, new TextEncoder().encode(buildMermaid(input)));
+          saved = await saveFile(`${stem}.mmd`, new TextEncoder().encode(buildMermaid(input)), title);
         } else {
           const { svg, width, height } = buildSvg(input, positions);
           const data = kind === "svg" ? new TextEncoder().encode(svg) : await svgToPng(svg, width, height);
-          saved = await saveFile(`${stem}.${kind}`, data);
+          saved = await saveFile(`${stem}.${kind}`, data, title);
         }
         if (saved) setNotice(`Saved ${saved}.${kind === "mermaid" ? tooBig : ""}`);
       } catch (e) {
@@ -434,6 +652,7 @@ export default function App() {
     },
     [scan, view, visible, selected, coloring, colorOf],
   );
+  runExportRef.current = (kind) => void runExport(kind);
 
   const viewProps = {
     nodes: visible.nodes,
@@ -474,15 +693,10 @@ export default function App() {
             <PanelLeft size={18} />
           </button>
         )}
-        <div className="brand">
+        {/* The project's name heads the explorer; the top bar only names the app. */}
+        <div className="brand" title="Repository Visual Analysis">
           <Logo size={22} />
-          {scan ? (
-            <span className="project-name" title={scan.root}>
-              {baseName(scan.root)}
-            </span>
-          ) : (
-            <span className="app-name">Repository Visual Analysis</span>
-          )}
+          {!scan && <span className="app-name">Repository Visual Analysis</span>}
         </div>
         <div className="topbar-center">
           {view && (
@@ -513,6 +727,9 @@ export default function App() {
         >
           <SquarePlus size={18} />
         </button>
+        <button className="icon-btn" onClick={() => setDialog("settings")} title={`Settings (${MOD_KEY}+,)`}>
+          <Settings size={18} />
+        </button>
       </header>
 
       <div className="workspace">
@@ -520,6 +737,8 @@ export default function App() {
           <>
             {sidebarOpen && (
               <Sidebar
+                projectName={baseName(scan.root)}
+                projectPath={scan.root}
                 tree={tree}
                 keyFiles={keyFiles}
                 colorOf={colorOf}
@@ -619,6 +838,7 @@ export default function App() {
                   busy={exporting}
                   selection={selected ? nameOf(selected) + (selected.endsWith("/") ? "/" : "") : null}
                   onExport={(kind) => void runExport(kind)}
+                  onOpenManager={() => setDialog("exports")}
                 />
               </div>
               {coloring && (
@@ -666,6 +886,7 @@ export default function App() {
 
         {mermaidDoc && (
           <MermaidViewer
+            key={mermaidDoc.rev ?? 0}
             initialText={mermaidDoc.text}
             name={mermaidDoc.name}
             onClose={(text, name) => {
@@ -675,6 +896,20 @@ export default function App() {
             onNotice={setNotice}
           />
         )}
+
+        {dialog === "settings" && (
+          <SettingsDialog
+            prefs={{ theme, viewMode, colorMode, autoRotate, hideNoise, navHintSeen, reopenLast }}
+            onChange={changePrefs}
+            recentCount={recent.length}
+            onClearRecent={() => setRecent(clearRecent())}
+            onOpenExports={() => setDialog("exports")}
+            onClose={() => setDialog(null)}
+          />
+        )}
+        {dialog === "exports" && <ExportManager onClose={() => setDialog(null)} onError={setError} />}
+        {dialog === "about" && <AboutDialog onClose={() => setDialog(null)} />}
+        {dialog === "shortcuts" && <ShortcutsDialog onClose={() => setDialog(null)} />}
 
         {scanning && (
           <div className="overlay" role="status">

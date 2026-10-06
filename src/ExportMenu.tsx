@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ClipboardCopy, Eye, FileCode2, FileImage, ImageDown, LoaderCircle, Workflow } from "lucide-react";
+import { ClipboardCopy, Eye, FileCode2, FileImage, History, ImageDown, LoaderCircle, Workflow } from "lucide-react";
 
 export type ExportKind = "png" | "svg" | "mermaid" | "copy-mermaid" | "viewer";
 
@@ -16,11 +16,14 @@ export function ExportMenu({
   busy,
   selection,
   onExport,
+  onOpenManager,
 }: {
   busy: boolean;
   /** The selected file or folder's name, which the export is limited to. */
   selection: string | null;
   onExport: (kind: ExportKind) => void;
+  /** Opens the list of past exports. */
+  onOpenManager: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -90,6 +93,20 @@ export function ExportMenu({
               </span>
             </button>
           ))}
+          <button
+            role="menuitem"
+            className="export-item"
+            onClick={() => {
+              setOpen(false);
+              onOpenManager();
+            }}
+          >
+            <History size={16} />
+            <span>
+              <span className="export-label">Export manager</span>
+              <span className="export-hint">Past exports, with Show in folder</span>
+            </span>
+          </button>
           <div className="export-note">
             {selection ? (
               <>

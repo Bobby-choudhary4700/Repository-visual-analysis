@@ -29,3 +29,10 @@ export function rememberRecent(path: string): string[] {
 export function forgetRecent(path: string): string[] {
   return save(loadRecent().filter((p) => p !== path));
 }
+
+export function clearRecent(): string[] {
+  return save([]);
+}
+
+/** The storage key, so other windows can notice the list changing. */
+export const RECENT_KEY = KEY;

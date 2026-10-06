@@ -1,4 +1,6 @@
 mod export;
+mod history;
+mod menu;
 mod project;
 pub mod scanner;
 mod watcher;
@@ -99,6 +101,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(WatcherState::default())
         .manage(ProjectState::default())
+        .manage(history::ExportHistory::default())
+        .manage(menu::RecentMenu::default())
+        .menu(menu::build)
+        .on_menu_event(|app, event| menu::handle(app, event.id().as_ref()))
         .on_window_event(|window, event| {
             // A closed window's project is forgotten and no longer watched.
             if let WindowEvent::Destroyed = event {
@@ -112,7 +118,13 @@ pub fn run() {
             reveal_in_file_manager,
             close_project,
             open_new_window,
-            export::save_export
+            export::save_export,
+            export::open_mermaid_file,
+            history::list_exports,
+            history::forget_export,
+            history::clear_exports,
+            history::reveal_export,
+            menu::set_recent_menu
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

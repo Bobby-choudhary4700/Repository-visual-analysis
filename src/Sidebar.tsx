@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ChevronRight, ChevronsDownUp, Folder, FolderOpen } from "lucide-react";
+import { ChevronRight, ChevronsDownUp, Folder, FolderGit2, FolderOpen } from "lucide-react";
 import { ROOT, drawnAs } from "./graph";
 import { KeyFiles } from "./KeyFiles";
 import type { KeyFile } from "./ranking";
@@ -7,6 +7,10 @@ import { loadChoice, saveSetting } from "./settings";
 import { nameOf, type TreeIndex } from "./tree";
 
 interface Props {
+  /** The open project's folder name, shown at the top of the explorer. */
+  projectName: string;
+  /** Its full path, for the name's tooltip. */
+  projectPath: string;
   tree: TreeIndex;
   /** The files the rest of the project leans on most, best first. */
   keyFiles: KeyFile[];
@@ -32,7 +36,13 @@ const TABS: { id: Tab; label: string }[] = [
 const TAB_IDS = TABS.map((t) => t.id);
 
 /** The explorer: every file as a tree, or the key files as a short list. */
-export const Sidebar = memo(function Sidebar({ keyFiles, onCollapseAll, ...treeProps }: Props) {
+export const Sidebar = memo(function Sidebar({
+  projectName,
+  projectPath,
+  keyFiles,
+  onCollapseAll,
+  ...treeProps
+}: Props) {
   const [tab, setTab] = useState<Tab>(() => loadChoice("rva.sidebarTab", TAB_IDS, "files"));
   useEffect(() => saveSetting("rva.sidebarTab", tab), [tab]);
   const { colorOf, expanded, selected, onSelect, onHover } = treeProps;
@@ -55,6 +65,11 @@ export const Sidebar = memo(function Sidebar({ keyFiles, onCollapseAll, ...treeP
 
   return (
     <nav className="sidebar" aria-label="Project files">
+      <div className="sidebar-project" title={projectPath}>
+        <FolderGit2 size={15} aria-hidden />
+        <span className="sidebar-project-name">{projectName}</span>
+        <span className="sidebar-project-count">{treeProps.tree.fileCount.get(ROOT) ?? 0}</span>
+      </div>
       <div className="sidebar-head">
         <div className="segmented" role="tablist" aria-label="Explorer" onKeyDown={onTabKey}>
           {TABS.map(({ id, label }) => (
@@ -116,7 +131,7 @@ function FileTree({
   onToggle,
   onSelect,
   onHover,
-}: Omit<Props, "keyFiles" | "onCollapseAll">) {
+}: Omit<Props, "projectName" | "projectPath" | "keyFiles" | "onCollapseAll">) {
   // Only open folders contribute rows, so a huge project costs no more than what is shown.
   const rows = useMemo(() => {
     const out: Row[] = [];
