@@ -2,7 +2,7 @@ import ForceGraph3D, { type ForceGraph3DInstance } from "3d-force-graph";
 import {
   AmbientLight,
   BufferGeometry,
-  CanvasTexture,
+  Color,
   DirectionalLight,
   Float32BufferAttribute,
   Fog,
@@ -10,11 +10,10 @@ import {
   Mesh,
   MeshBasicMaterial,
   Points,
+  PlaneGeometry,
   PointsMaterial,
-  SRGBColorSpace,
+  ShaderMaterial,
   SphereGeometry,
-  Sprite,
-  SpriteMaterial,
   Vector3,
   type Object3D,
   type PerspectiveCamera,
@@ -423,7 +422,7 @@ export class GraphScene {
     this.wires.dispose();
     this.arrows.dispose();
     this.sparks.dispose();
-    this.halo.material.map?.dispose();
+    this.halo.geometry.dispose();
     this.halo.material.dispose();
     this.stars.geometry.dispose();
     (this.stars.material as PointsMaterial).dispose();
@@ -696,7 +695,8 @@ export class GraphScene {
     if (!selected || !object) {
       this.halo.removeFromParent();
     } else {
-      this.halo.scale.setScalar((selected.radius * 1.75) / HALO_RING);
+      // Just outside the node, or just outside a folder's globe.
+      this.halo.scale.setScalar((pickRadius(selected) * 1.08 + 1.5) / HALO_RING);
       if (this.halo.parent !== object) object.add(this.halo);
     }
     this.labelsDirty = missing;
@@ -827,31 +827,53 @@ function startPosition(node: VisibleNode, previous: Map<string, SceneNode>, spre
   return { x: random() * spread, y: random() * spread, z: random() * spread };
 }
 
-/** Radius of the ring in the halo texture, as a share of the sprite's size. */
-const HALO_RING = 50 / 128;
+/**
+ * The selection ring's radius in its own quad, which spans -1..1; the rest of the quad
+ * leaves room for the soft glow outside the line.
+ */
+const HALO_RING = 0.8;
 
-/** A white ring that always faces the camera, marking the selected file. */
-function makeHalo(): Sprite {
-  const size = 128;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const context = canvas.getContext("2d");
-  if (context) {
-    context.strokeStyle = "#ffffff";
-    context.lineWidth = 7;
-    context.shadowColor = "rgba(255, 255, 255, 0.8)";
-    context.shadowBlur = 10;
-    context.beginPath();
-    context.arc(size / 2, size / 2, HALO_RING * size, 0, Math.PI * 2);
-    context.stroke();
-  }
-  const texture = new CanvasTexture(canvas);
-  texture.colorSpace = SRGBColorSpace;
-  const halo = new Sprite(
-    new SpriteMaterial({ map: texture, color: "#f8fafc", transparent: true, depthWrite: false }),
-  );
+/**
+ * A thin ring that always faces the camera, marking the selection. It is drawn by a
+ * shader so the line stays about two pixels wide however big the node is on screen;
+ * a ring textured onto a sprite grew with the node into a thick glowing band.
+ */
+function makeHalo(): Mesh<PlaneGeometry, ShaderMaterial> {
+  const material = new ShaderMaterial({
+    uniforms: { ring: { value: HALO_RING }, color: { value: new Color("#e2e8f0") } },
+    vertexShader: /* glsl */ `
+      varying vec2 vPos;
+      void main() {
+        vPos = position.xy;
+        // Billboard: start from the node's centre in view space and spread the quad
+        // across the screen plane, scaled like the object.
+        float scale = length(modelMatrix[0].xyz);
+        vec4 centre = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        gl_Position = projectionMatrix * (centre + vec4(position.xy * scale, 0.0, 0.0));
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float ring;
+      uniform vec3 color;
+      varying vec2 vPos;
+      void main() {
+        float d = length(vPos);
+        // One pixel in quad units, so widths below are in screen pixels.
+        float px = max(fwidth(d), 1e-5);
+        float off = abs(d - ring) / px;
+        float line = 1.0 - smoothstep(0.75, 1.75, off);
+        float glow = 0.22 * (1.0 - smoothstep(1.0, 6.0, off));
+        float alpha = max(line * 0.9, glow);
+        if (alpha <= 0.004) discard;
+        gl_FragColor = vec4(color, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+  });
+  const halo = new Mesh(new PlaneGeometry(2, 2), material);
   halo.renderOrder = 5;
+  halo.frustumCulled = false;
   // The ring is decoration: it must not catch the pointer meant for nodes behind it.
   halo.raycast = () => {};
   return halo;
