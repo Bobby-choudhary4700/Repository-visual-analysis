@@ -80,7 +80,7 @@ time and 44 ms with the cache.
 
 | Language | What becomes a wire |
 | --- | --- |
-| JavaScript / TypeScript / TSX | relative `import`, `export … from`, `require()`, `import()` |
+| JavaScript / TypeScript / TSX | `import`, `export … from`, `require()`, `import()` of relative paths, and of aliases like `~/lib/db` or `@/components/Button` set by `paths` and `baseUrl` in the nearest `tsconfig.json` or `jsconfig.json` |
 | Python | `import a.b`, `from .x import y` (relative and absolute) |
 | Rust | `mod name;` declarations and `use` paths (`crate::`, `self::`, `super::`) |
 
@@ -105,11 +105,14 @@ src/                 React frontend
   SearchBox.tsx      Ctrl+K file search (ranking in search.ts)
   FileDetails.tsx    imports / imported-by panel for the selected file
   Legend.tsx         the colour key and colour mode switch
+  ExportMenu.tsx     the export menu; exportGraph.ts builds the SVG, PNG and Mermaid
   StatusBar.tsx, styles.css
 src-tauri/           Rust backend
   src/lib.rs         commands the frontend calls: scan_repository, reveal_in_file_manager
+  src/export.rs      save_export: the save dialog and file write for exports
   src/project.rs     keeps file actions inside the open project
-  src/scanner/       walk.rs (file listing), imports.rs (tree-sitter), resolve.rs, cache.rs
+  src/scanner/       walk.rs (file listing), imports.rs (tree-sitter), resolve.rs,
+                     aliases.rs (tsconfig paths), cache.rs
   src/watcher.rs     debounced file watching for live updates
   examples/scan.rs   command-line scan for benchmarking
 ```
