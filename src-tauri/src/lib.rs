@@ -72,6 +72,20 @@ fn reveal_in_file_manager(
     tauri_plugin_opener::reveal_item_in_dir(full).map_err(|e| e.to_string())
 }
 
+/// Closes the window's project when the UI goes back to the home screen: stops watching
+/// it, stops showing its files in the file manager and puts back the plain window title.
+#[tauri::command]
+fn close_project(
+    window: tauri::Window,
+    watcher_state: State<'_, WatcherState>,
+    project: State<'_, ProjectState>,
+) {
+    let label = window.label();
+    watcher_state.stop(label);
+    project.remove(label);
+    let _ = window.set_title(windows::APP_TITLE);
+}
+
 /// Opens another app window, so a second project can be analysed alongside this one.
 /// Async, because creating a window from a synchronous command deadlocks on Windows.
 #[tauri::command]
@@ -96,6 +110,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             scan_repository,
             reveal_in_file_manager,
+            close_project,
             open_new_window,
             export::save_export
         ])

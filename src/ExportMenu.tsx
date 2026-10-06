@@ -1,17 +1,27 @@
 import { useEffect, useRef, useState } from "react";
-import { ClipboardCopy, FileCode2, FileImage, ImageDown, LoaderCircle, Workflow } from "lucide-react";
+import { ClipboardCopy, Eye, FileCode2, FileImage, ImageDown, LoaderCircle, Workflow } from "lucide-react";
 
-export type ExportKind = "png" | "svg" | "mermaid" | "copy-mermaid";
+export type ExportKind = "png" | "svg" | "mermaid" | "copy-mermaid" | "viewer";
 
 const ITEMS: { kind: ExportKind; label: string; hint: string; Icon: typeof FileImage }[] = [
   { kind: "png", label: "Save as PNG", hint: "A picture for slides and chats", Icon: FileImage },
   { kind: "svg", label: "Save as SVG", hint: "Sharp at any size, editable", Icon: FileCode2 },
   { kind: "mermaid", label: "Save as Mermaid", hint: "A .mmd diagram GitHub can draw", Icon: Workflow },
   { kind: "copy-mermaid", label: "Copy Mermaid", hint: "Paste into a README or pull request", Icon: ClipboardCopy },
+  { kind: "viewer", label: "Open in Mermaid viewer", hint: "See and tidy the diagram, then save it", Icon: Eye },
 ];
 
 /** The export button beside the zoom controls, with its menu of formats. */
-export function ExportMenu({ busy, onExport }: { busy: boolean; onExport: (kind: ExportKind) => void }) {
+export function ExportMenu({
+  busy,
+  selection,
+  onExport,
+}: {
+  busy: boolean;
+  /** The selected file or folder's name, which the export is limited to. */
+  selection: string | null;
+  onExport: (kind: ExportKind) => void;
+}) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -80,7 +90,16 @@ export function ExportMenu({ busy, onExport }: { busy: boolean; onExport: (kind:
               </span>
             </button>
           ))}
-          <div className="export-note">Exports what is shown: the open folders, colours and current angle.</div>
+          <div className="export-note">
+            {selection ? (
+              <>
+                Exports <strong>{selection}</strong> and what it connects to. Clear the selection (Esc) to export the
+                view.
+              </>
+            ) : (
+              "Exports the part of the graph on screen, with its colours and current angle."
+            )}
+          </div>
         </div>
       )}
     </div>

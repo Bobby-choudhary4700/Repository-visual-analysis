@@ -4,6 +4,9 @@ import type { GraphViewProps } from "./GraphView";
 import { GraphScene } from "./scene3d";
 import { NodeTooltip } from "./Tooltip";
 
+/** Two clicks on one node within this long count as a double click. */
+const DOUBLE_CLICK_MS = 400;
+
 export interface Graph3DViewProps extends GraphViewProps {
   /** Slowly turns the view around the graph, like a globe on its stand. */
   autoRotate: boolean;
@@ -41,6 +44,7 @@ export function Graph3DView({
   colorOfRef.current = colorOf;
   const handledFocusRef = useRef(focusRequest);
   const pointerRef = useRef({ x: 0, y: 0 });
+  const lastClickRef = useRef<{ id: string; at: number } | null>(null);
   const [tooltip, setTooltip] = useState<{ id: string; x: number; y: number } | null>(null);
 
   // A layout effect, so the scene goes away in the same commit as its canvas.
@@ -48,9 +52,17 @@ export function Graph3DView({
     const container = containerRef.current!;
     const scene = new GraphScene(container, {
       onHover: (id) => setTooltip(id ? { id, ...pointerRef.current } : null),
+      // A click selects a file or folder; a second click on the same folder soon after opens it.
       onClick: (id) => {
-        if (id.endsWith("/")) handlersRef.current.onExpand(id);
-        else handlersRef.current.onSelect(id);
+        const now = performance.now();
+        const last = lastClickRef.current;
+        lastClickRef.current = { id, at: now };
+        if (id.endsWith("/") && last?.id === id && now - last.at < DOUBLE_CLICK_MS) {
+          lastClickRef.current = null;
+          handlersRef.current.onExpand(id);
+        } else {
+          handlersRef.current.onSelect(id);
+        }
       },
       onRightClick: (id) => {
         const parent = parentOf(id);
@@ -71,6 +83,7 @@ export function Graph3DView({
         if (selectedRef.current) scene.focusOn(selectedRef.current);
       },
       positions: () => scene.screenPositions(),
+      viewport: () => ({ width: container.clientWidth, height: container.clientHeight }),
     };
     return () => {
       observer.disconnect();

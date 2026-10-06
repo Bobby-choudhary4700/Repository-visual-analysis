@@ -964,6 +964,7 @@ button:focus-visible {
 
 .details-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 12px;
 }
@@ -1358,4 +1359,212 @@ button:focus-visible {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ---- Folder panel ------------------------------------------------------ */
+
+.details-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.details-section li.none {
+  padding: 4px 8px;
+}
+
+.type-counts li {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 8px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+/* The explorer's arrow opens a folder; the rest of the row selects it. */
+.chev-hit {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  margin: -4px 0;
+  padding: 4px 0;
+  border-radius: 4px;
+}
+
+.chev-hit:hover {
+  background: var(--surface-hover);
+}
+
+.chev-hit:hover .chev {
+  color: var(--text);
+}
+
+.btn.active {
+  border-color: var(--brand);
+  color: var(--text);
+}
+
+.welcome-card > .btn:not(.primary) {
+  margin-top: 4px;
+}
+
+/* ---- Mermaid viewer ---------------------------------------------------- */
+
+.mermaid-viewer {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.mv-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.mv-logo {
+  color: var(--brand);
+}
+
+.mv-title {
+  margin-right: 8px;
+  font-weight: 600;
+}
+
+.mv-spacer {
+  flex: 1;
+}
+
+.mv-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.mv-source {
+  flex: 0 0 clamp(240px, 32%, 520px);
+  padding: 14px;
+  border: none;
+  border-right: 1px solid var(--border);
+  outline: none;
+  resize: none;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+.mv-source::placeholder {
+  color: var(--text-faint);
+}
+
+.mv-source:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--brand);
+}
+
+.mv-preview {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.mv-preview:active {
+  cursor: grabbing;
+}
+
+.mv-preview.light {
+  background: #f8fafc;
+}
+
+.mv-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  line-height: 0;
+  box-shadow: var(--shadow);
+}
+
+.mv-stage.stale {
+  opacity: 0.45;
+}
+
+.mv-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.mv-empty p {
+  max-width: 320px;
+  margin: 0;
+}
+
+.mv-drawing {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mv-problem {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 8px;
+  max-height: 40%;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  cursor: auto;
+}
+
+.mv-problem svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.mv-zoom {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
 }
