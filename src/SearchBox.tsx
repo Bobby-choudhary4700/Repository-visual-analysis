@@ -7,16 +7,23 @@ import type { FileNode } from "./types";
 
 interface Props {
   files: FileNode[];
+  /** Files the graph leaves out, so a search that only matches them can offer to show them. */
+  hiddenFiles: FileNode[];
   onPick: (path: string) => void;
+  onShowHidden: () => void;
 }
 
 /** Type to find a file; Enter or a click opens it in the graph. Ctrl/Cmd+K focuses it. */
-export function SearchBox({ files, onPick }: Props) {
+export function SearchBox({ files, hiddenFiles, onPick, onShowHidden }: Props) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const results = useMemo(() => searchFiles(files, query), [files, query]);
+  const onlyHidden = useMemo(
+    () => results.length === 0 && searchFiles(hiddenFiles, query).length > 0,
+    [results, hiddenFiles, query],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -71,7 +78,21 @@ export function SearchBox({ files, onPick }: Props) {
       />
       {open && query.trim() && (
         <ul className="results">
-          {results.length === 0 && <li className="none">No matching files</li>}
+          {results.length === 0 &&
+            (onlyHidden ? (
+              <li
+                className="none action"
+                onMouseDown={(e) => {
+                  // Keeps the focus here, so the matches show as soon as the files do.
+                  e.preventDefault();
+                  onShowHidden();
+                }}
+              >
+                Only hidden tests, docs or examples match. <span className="link">Show them</span>
+              </li>
+            ) : (
+              <li className="none">No matching files</li>
+            ))}
           {results.map((file, i) => {
             const cut = file.path.lastIndexOf("/");
             return (

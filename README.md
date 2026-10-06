@@ -15,6 +15,14 @@ look at it from any side, and a flat 2D view is one key away.
   hovering one of its rows traces that node in the graph.
 - Click a file to see what it imports and what imports it. Every entry in that panel jumps
   to that file, and **Show in folder** and **Copy path** hand the file to your other tools.
+- **Key files**, the second tab of the explorer, lists where to start reading a new
+  project: the files the rest of it leans on most. A file ranks mostly by how many files
+  import it, and also by how many it imports and how big it is. Type, util and index files
+  rank lower, since they are imported widely but rarely hold the work, and tests, docs and
+  examples are left out. Click one to open the folders above it and select it.
+- The funnel button at the top right (or **H**) **hides tests, docs, examples, benchmarks,
+  vendored and generated files and lockfiles**, so the graph shows the code that runs. The
+  status bar counts what is hidden; click the count to show them again.
 - Press **Ctrl+K** to find a file by name. Picking one opens the folders above it and
   centres the graph on it.
 - Hover a node to trace its wires and see a short summary. Arrows on the traced wires point
@@ -93,6 +101,8 @@ src/                 React frontend
   App.tsx            open project, folder and selection state, keyboard shortcuts
   Welcome.tsx        start screen with recent projects (stored by recent.ts)
   Sidebar.tsx        explorer that mirrors the graph (tree.ts builds its index)
+  KeyFiles.tsx       the Key files tab; ranking.ts picks and orders them
+  noise.ts           which files the hide switch leaves out (tests, docs, examples...)
   Graph3DView.tsx    3D view: hover, clicks and camera controls around scene3d.ts
   scene3d.ts         the 3D scene: camera, labels, tracing and auto-rotate
   layers3d.ts        batched three.js drawing of spheres, globes, wires and arrows
