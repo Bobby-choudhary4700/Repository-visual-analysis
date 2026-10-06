@@ -35,6 +35,59 @@ const LABEL_FONT_SIZE = 12;
 /** Mermaid's own default limit; renderers refuse bigger charts unless configured. */
 export const MERMAID_MAX_EDGES = 500;
 
+/** The part of the graph an export covers. */
+export interface ExportScope {
+  nodes: VisibleNode[];
+  edges: VisibleEdge[];
+  /** Says what was left out, such as "the selection and its wires". */
+  note: string;
+}
+
+/**
+ * Picks what an export covers, the way the view shows it. With a selection, that is the
+ * selected node (for a folder that is open, everything drawn inside it) plus the nodes
+ * it is wired to, and only the wires that touch it, as the view traces them. Without
+ * one, it is the nodes on screen and the wires between them. Returns `null` when that
+ * leaves nothing to draw.
+ */
+export function exportScope(
+  nodes: VisibleNode[],
+  edges: VisibleEdge[],
+  selected: string | null,
+  positions: ScreenPositions,
+  viewport: { width: number; height: number },
+): ExportScope | null {
+  if (selected) {
+    const folder = selected.endsWith("/");
+    const core = new Set(
+      nodes.filter((n) => n.id === selected || (folder && n.id.startsWith(selected))).map((n) => n.id),
+    );
+    if (core.size > 0) {
+      const kept = edges.filter((e) => core.has(e.source) || core.has(e.target));
+      const ids = new Set(core);
+      for (const e of kept) ids.add(e.source).add(e.target);
+      const name = selected.slice(selected.lastIndexOf("/", selected.length - 2) + 1);
+      return { nodes: nodes.filter((n) => ids.has(n.id)), edges: kept, note: `${name} and what it connects to` };
+    }
+  }
+  // A node counts as on screen when any of its disc is, so ones at the edge are kept.
+  const onScreen = new Set(
+    nodes
+      .filter((n) => {
+        const p = positions.get(n.id);
+        const r = radiusOf(n);
+        return p && p.x >= -r && p.y >= -r && p.x <= viewport.width + r && p.y <= viewport.height + r;
+      })
+      .map((n) => n.id),
+  );
+  if (onScreen.size === 0) return null;
+  return {
+    nodes: nodes.filter((n) => onScreen.has(n.id)),
+    edges: edges.filter((e) => onScreen.has(e.source) && onScreen.has(e.target)),
+    note: onScreen.size < nodes.length ? "the part on screen" : "",
+  };
+}
+
 /** Node radius in pixels, the same as the 2D view draws it. */
 function radiusOf(node: VisibleNode): number {
   return Math.min(4 + 2 * Math.sqrt(node.fileCount), 28);

@@ -1,4 +1,4 @@
-import { Folder, FolderOpen, Upload, X } from "lucide-react";
+import { Folder, FolderOpen, Upload, Workflow, X } from "lucide-react";
 import { Logo } from "./Logo";
 import { MOD_KEY } from "./platform";
 import { baseName } from "./tree";
@@ -9,10 +9,11 @@ interface Props {
   onOpen: () => void;
   onOpenRecent: (path: string) => void;
   onForget: (path: string) => void;
+  onOpenMermaid: () => void;
 }
 
 /** First screen: open a folder, drop one on the window, or pick up a recent project. */
-export function Welcome({ recent, busy, onOpen, onOpenRecent, onForget }: Props) {
+export function Welcome({ recent, busy, onOpen, onOpenRecent, onForget, onOpenMermaid }: Props) {
   return (
     <div className="welcome">
       <div className="welcome-card">
@@ -29,6 +30,10 @@ export function Welcome({ recent, busy, onOpen, onOpenRecent, onForget }: Props)
         <p className="hint">
           <Upload size={14} /> or drop a folder onto this window
         </p>
+        <button className="btn" onClick={onOpenMermaid}>
+          <Workflow size={16} />
+          Open the Mermaid viewer
+        </button>
 
         {recent.length > 0 && (
           <section className="recent">

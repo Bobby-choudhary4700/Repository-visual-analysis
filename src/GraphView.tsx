@@ -49,13 +49,15 @@ export interface GraphHandle {
   centre(): void;
   /** Where every drawn node is on screen right now, for exporting the picture. */
   positions(): ScreenPositions;
+  /** The size of the view on screen, in the same pixels as `positions`. */
+  viewport(): { width: number; height: number };
 }
 
 export interface GraphViewProps {
   nodes: VisibleNode[];
   edges: VisibleEdge[];
   colorOf: (id: string) => string;
-  /** The selected file, highlighted and kept traced while nothing is hovered. */
+  /** The selected file or folder, highlighted and kept traced while nothing is hovered. */
   selected: string | null;
   /** Bumped to centre the camera on `selected`, e.g. when it is picked from search. */
   focusRequest: number;
@@ -67,7 +69,7 @@ export interface GraphViewProps {
   apiRef: MutableRefObject<GraphHandle | null>;
   onExpand: (folderId: string) => void;
   onCollapse: (folderId: string) => void;
-  /** A file was clicked, or `null` when the empty background was. */
+  /** A file or folder was clicked, or `null` when the empty background was. */
   onSelect: (fileId: string | null) => void;
 }
 
@@ -155,6 +157,7 @@ export function GraphView({
       // A very narrow window can squeeze the canvas to nothing; draw nothing then, not throw.
       allowInvalidContainer: true,
       defaultDrawNodeHover: drawHoverRing,
+      defaultDrawNodeLabel: drawLabel,
       zIndex: true,
       nodeReducer: (node, data) => {
         const isSelected = node === selectedRef.current;
@@ -195,15 +198,13 @@ export function GraphView({
       },
     });
 
-    sigma.on("clickNode", ({ node }) => {
-      if (graph.getNodeAttribute(node, "kind") === "folder") {
-        handlersRef.current.onExpand(node);
-      } else {
-        handlersRef.current.onSelect(node);
-      }
-    });
+    // A click selects a file or folder; a double click opens a folder.
+    sigma.on("clickNode", ({ node }) => handlersRef.current.onSelect(node));
     sigma.on("clickStage", () => handlersRef.current.onSelect(null));
-    sigma.on("doubleClickNode", (e) => e.preventSigmaDefault());
+    sigma.on("doubleClickNode", (e) => {
+      e.preventSigmaDefault();
+      if (graph.getNodeAttribute(e.node, "kind") === "folder") handlersRef.current.onExpand(e.node);
+    });
     sigma.on("rightClickNode", ({ node, event }) => {
       event.original.preventDefault();
       const parent = parentOf(node);
@@ -241,6 +242,7 @@ export function GraphView({
         graph.forEachNode((id, attrs) => out.set(id, sigma.graphToViewport({ x: attrs.x, y: attrs.y })));
         return out;
       },
+      viewport: () => ({ width: container.clientWidth, height: container.clientHeight }),
     };
     sigmaRef.current = sigma;
     return () => {
@@ -436,6 +438,28 @@ function startPosition(node: VisibleNode, previous: Map<string, Position>): Posi
     if (id.startsWith(node.id)) return { ...pos };
   }
   return { x: random() * 50, y: random() * 50 };
+}
+
+/** Labels sit on a dark plate, so a bright traced wire passing under one never hides it. */
+const LABEL_PLATE = "rgb(11 17 32 / 82%)";
+
+function drawLabel(
+  context: CanvasRenderingContext2D,
+  data: PartialButFor<NodeDisplayData, "x" | "y" | "size" | "label" | "color">,
+  settings: Settings,
+): void {
+  if (!data.label) return;
+  const size = settings.labelSize;
+  context.font = `${settings.labelWeight} ${size}px ${settings.labelFont}`;
+  const width = context.measureText(data.label).width;
+  const x = data.x + data.size + 4;
+  const top = data.y - size / 2 - 3;
+  context.fillStyle = LABEL_PLATE;
+  context.beginPath();
+  context.roundRect(x - 3, top, width + 6, size + 6, 4);
+  context.fill();
+  context.fillStyle = settings.labelColor.color ?? "#cbd5e1";
+  context.fillText(data.label, x, data.y + size / 3);
 }
 
 /** A ring around the hovered node; its details are in the tooltip, so there is no label box. */

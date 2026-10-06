@@ -63,6 +63,14 @@ fn reveal_in_file_manager(project: State<'_, ProjectState>, path: String) -> Res
     tauri_plugin_opener::reveal_item_in_dir(full).map_err(|e| e.to_string())
 }
 
+/// Closes the open project when the UI goes back to the home screen: stops watching it
+/// and stops showing its files in the file manager.
+#[tauri::command]
+fn close_project(watcher_state: State<'_, WatcherState>, project: State<'_, ProjectState>) {
+    watcher_state.stop();
+    project.clear();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -72,6 +80,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             scan_repository,
             reveal_in_file_manager,
+            close_project,
             export::save_export
         ])
         .run(tauri::generate_context!())

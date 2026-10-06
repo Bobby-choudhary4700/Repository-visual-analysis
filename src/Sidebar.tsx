@@ -17,7 +17,8 @@ interface Props {
   selected: string | null;
   focusRequest: number;
   onToggle: (folderId: string) => void;
-  onSelectFile: (path: string) => void;
+  /** Picks a file or folder, as clicking its node in the graph does. */
+  onSelect: (path: string) => void;
   /** Hovering a row traces that node in the graph. */
   onHover: (id: string | null) => void;
   onCollapseAll: () => void;
@@ -34,7 +35,7 @@ const TAB_IDS = TABS.map((t) => t.id);
 export const Sidebar = memo(function Sidebar({ keyFiles, onCollapseAll, ...treeProps }: Props) {
   const [tab, setTab] = useState<Tab>(() => loadChoice("rva.sidebarTab", TAB_IDS, "files"));
   useEffect(() => saveSetting("rva.sidebarTab", tab), [tab]);
-  const { colorOf, expanded, selected, onSelectFile, onHover } = treeProps;
+  const { colorOf, expanded, selected, onSelect, onHover } = treeProps;
 
   // The row under the pointer goes away with its tab, so stop tracing it.
   const pick = (next: Tab) => {
@@ -85,7 +86,7 @@ export const Sidebar = memo(function Sidebar({ keyFiles, onCollapseAll, ...treeP
             files={keyFiles}
             colorOf={colorOf}
             selected={selected}
-            onSelect={onSelectFile}
+            onSelect={onSelect}
             // A file inside a closed folder is traced through that folder.
             onHover={(path) => onHover(path && drawnAs(path, expanded))}
           />
@@ -113,7 +114,7 @@ function FileTree({
   selected,
   focusRequest,
   onToggle,
-  onSelectFile,
+  onSelect,
   onHover,
 }: Omit<Props, "keyFiles" | "onCollapseAll">) {
   // Only open folders contribute rows, so a huge project costs no more than what is shown.
@@ -184,11 +185,30 @@ function FileTree({
               className={id === selected ? "tree-row selected" : "tree-row"}
               style={{ paddingLeft: 8 + depth * 14 }}
               title={folder ? id.slice(0, -1) : id}
-              onClick={() => (folder ? onToggle(id) : onSelectFile(id))}
+              // A click selects, as in the graph; the arrow or a double click opens a folder.
+              onClick={() => onSelect(id)}
+              onDoubleClick={() => folder && onToggle(id)}
+              onKeyDown={(e) => {
+                if (!folder) return;
+                if ((e.key === "ArrowRight" && !open) || (e.key === "ArrowLeft" && open)) {
+                  e.preventDefault();
+                  onToggle(id);
+                }
+              }}
               onMouseEnter={() => onHover(id)}
             >
               {folder ? (
-                <ChevronRight size={14} className={open ? "chev open" : "chev"} />
+                <span
+                  className="chev-hit"
+                  title={open ? "Close this folder" : "Open this folder"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggle(id);
+                  }}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                >
+                  <ChevronRight size={14} className={open ? "chev open" : "chev"} />
+                </span>
               ) : (
                 <span className="chev" />
               )}

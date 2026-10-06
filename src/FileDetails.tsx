@@ -13,6 +13,8 @@ interface Props {
   onClose: () => void;
 }
 
+const MAX_LISTED = 300;
+
 /** Side panel for one file: what it imports and what imports it, each one a link. */
 export function FileDetails({ scan, path, onSelect, onReveal, onClose }: Props) {
   const byPath = useMemo(() => new Map(scan.files.map((f) => [f.path, f])), [scan]);
@@ -78,7 +80,7 @@ export function FileDetails({ scan, path, onSelect, onReveal, onClose }: Props) 
   );
 }
 
-function FileList({
+export function FileList({
   title,
   files,
   onSelect,
@@ -87,6 +89,8 @@ function FileList({
   files: FileNode[];
   onSelect: (path: string) => void;
 }) {
+  // A busy folder can have thousands; the first few hundred say enough and keep it quick.
+  const shown = files.slice(0, MAX_LISTED);
   return (
     <section className="details-section">
       <h3>
@@ -96,7 +100,7 @@ function FileList({
         <p className="none">None in this project</p>
       ) : (
         <ul>
-          {files.map((f) => (
+          {shown.map((f) => (
             <li key={f.path}>
               <button className="dep" title={f.path} onClick={() => onSelect(f.path)}>
                 <span className="dot" style={{ color: fileColor(f.path) }} />
@@ -105,6 +109,9 @@ function FileList({
               </button>
             </li>
           ))}
+          {files.length > shown.length && (
+            <li className="none">and {(files.length - shown.length).toLocaleString()} more</li>
+          )}
         </ul>
       )}
     </section>
@@ -112,7 +119,7 @@ function FileList({
 }
 
 /** Copies through the Clipboard API, falling back to a hidden textarea where it is unavailable. */
-async function copyText(text: string): Promise<boolean> {
+export async function copyText(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
     return true;

@@ -14,6 +14,13 @@ impl ProjectState {
         }
     }
 
+    /// Forgets the open project, so no path resolves until another one opens.
+    pub fn clear(&self) {
+        if let Ok(mut current) = self.0.lock() {
+            *current = None;
+        }
+    }
+
     pub fn root(&self) -> Option<PathBuf> {
         self.0.lock().ok()?.clone()
     }

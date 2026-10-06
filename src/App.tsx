@@ -8,12 +8,14 @@ import {
   Crosshair,
   FolderOpen,
   Funnel,
+  House,
   LoaderCircle,
   Maximize,
   Orbit,
   PanelLeft,
   TriangleAlert,
   Upload,
+  Workflow,
   X,
   ZoomIn,
   ZoomOut,
@@ -21,14 +23,23 @@ import {
 import { COLOR_MODES, makeColoring, projectColors, type ColorMode } from "./coloring";
 import { typeLabel } from "./colors";
 import { ExportMenu, type ExportKind } from "./ExportMenu";
-import { MERMAID_MAX_EDGES, buildMermaid, buildSvg, svgToPng, type ExportInput } from "./exportGraph";
+import {
+  MERMAID_MAX_EDGES,
+  buildMermaid,
+  buildSvg,
+  exportScope,
+  svgToPng,
+  type ExportInput,
+} from "./exportGraph";
 import { FileDetails } from "./FileDetails";
+import { FolderDetails } from "./FolderDetails";
 import { plural } from "./format";
 import { ROOT, buildVisibleGraph, parentOf } from "./graph";
 import { Graph3DView } from "./Graph3DView";
 import { GraphView, type GraphHandle } from "./GraphView";
 import { Legend } from "./Legend";
 import { Logo } from "./Logo";
+import { MermaidViewer } from "./MermaidViewer";
 import { isNoise, withoutNoise } from "./noise";
 import { MOD_KEY, prefersReducedMotion } from "./platform";
 import { rankKeyFiles } from "./ranking";
@@ -73,6 +84,12 @@ export default function App() {
   const [navHintSeen, setNavHintSeen] = useState(() => loadFlag("rva.navHintSeen", false));
   /** The legend entry being pointed at, whose nodes stay lit. */
   const [legendHover, setLegendHover] = useState<string | null>(null);
+  /** The Mermaid viewer's starting text while it is open, or `null` when it is closed. */
+  const [mermaidDoc, setMermaidDoc] = useState<{ text: string; name: string } | null>(null);
+  const mermaidOpenRef = useRef(false);
+  /** What the viewer held when it was last closed, so reopening it picks up there. */
+  const mermaidDraft = useRef({ text: "", name: "diagram" });
+  mermaidOpenRef.current = mermaidDoc !== null;
   const openPath = useRef<string | null>(null);
   const graphApi = useRef<GraphHandle | null>(null);
 
@@ -113,8 +130,8 @@ export default function App() {
         // Ignore a result for a project that was replaced while it was scanning.
         if (cancelled || openPath.current !== path) return;
         setScan(result);
-        // Drop the selection if its file was deleted.
-        setSelected((sel) => (sel && result.files.some((f) => f.path === sel) ? sel : null));
+        // Drop the selection if its file, or every file in its folder, was deleted.
+        setSelected((sel) => (sel && result.files.some((f) => f.path === sel || (sel.endsWith("/") && f.path.startsWith(sel))) ? sel : null));
       } catch (e) {
         if (!cancelled) setError(String(e));
       }
@@ -132,11 +149,12 @@ export default function App() {
     try {
       getCurrentWebview()
         .onDragDropEvent(({ payload }) => {
-          if (payload.type === "enter" || payload.type === "over") setDragging(true);
+          if (payload.type === "enter" || payload.type === "over") setDragging(!mermaidOpenRef.current);
           else if (payload.type === "leave") setDragging(false);
           else {
             setDragging(false);
-            if (payload.paths[0]) void openProject(payload.paths[0]);
+            // The Mermaid viewer covers the graph; a drop there is not meant to open a project.
+            if (payload.paths[0] && !mermaidOpenRef.current) void openProject(payload.paths[0]);
           }
         })
         .then((fn) => (cancelled ? fn() : (unlisten = fn)))
@@ -150,8 +168,19 @@ export default function App() {
     };
   }, [openProject]);
 
+  // Back to the home screen: the project closes and stops being watched.
+  const goHome = useCallback(() => {
+    openPath.current = null;
+    setScan(null);
+    setExpanded(new Set());
+    setSelected(null);
+    setTreeHover(null);
+    setError(null);
+    invoke("close_project").catch(() => {});
+  }, []);
+
   // Opening from search, the explorer or the details panel opens every folder above
-  // the file and centres the camera on it.
+  // the file or folder and centres the camera on it.
   const reveal = useCallback((path: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -190,7 +219,7 @@ export default function App() {
     if (!scan) return;
     const hide = !hideNoise;
     setHideNoise(hide);
-    if (hide) setSelected((sel) => (sel && isNoise(sel) ? null : sel));
+    if (hide) setSelected((sel) => (sel && hidesAll(scan, sel) ? null : sel));
     const opened = initialExpansion(hide ? withoutNoise(scan) : scan);
     setExpanded((prev) => new Set([...prev, ...opened]));
     graphApi.current?.fit();
@@ -208,6 +237,8 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
+      // The Mermaid viewer has its own keys while it is open.
+      if (mermaidOpenRef.current) return;
       if (mod && key === "o") {
         e.preventDefault();
         void chooseFolder();
@@ -298,7 +329,7 @@ export default function App() {
           color: colorOf(id),
           kind: "folder",
           detail: `${plural(files, "file")} · ${plural(d.out, "wire")} out · ${d.in} in`,
-          hint: "Click to open this folder",
+          hint: "Click to select · double-click to open",
         };
       }
       return {
@@ -325,23 +356,36 @@ export default function App() {
       const api = graphApi.current;
       if (!view || !api) return;
       const title = baseName(view.root);
-      // Only the colours the drawn nodes use go in the picture's key.
-      const used = new Set(visible.nodes.map((n) => coloring?.keyOf(n.id)));
+      // Only what the view shows: the selection and its wires, or else the part on screen.
+      const positions = api.positions();
+      const scope = exportScope(visible.nodes, visible.edges, selected, positions, api.viewport());
+      if (!scope) {
+        setError("Nothing is on screen to export. Press F to fit the graph, then export again.");
+        return;
+      }
+      const whole = scope.nodes.length === visible.nodes.length && scope.edges.length === visible.edges.length;
+      // Only the colours the exported nodes use go in the picture's key.
+      const used = new Set(scope.nodes.map((n) => coloring?.keyOf(n.id)));
+      const notes = [scope.note, view !== scan ? "tests, docs and examples hidden" : ""].filter(Boolean);
       const input: ExportInput = {
         title,
-        nodes: visible.nodes,
-        edges: visible.edges,
-        imports: view.edges.length,
-        note: view !== scan ? "tests, docs and examples hidden" : undefined,
+        nodes: scope.nodes,
+        edges: scope.edges,
+        imports: whole ? view.edges.length : scope.edges.reduce((sum, e) => sum + e.weight, 0),
+        note: notes.length > 0 ? notes.join(", ") : undefined,
         colorOf,
         key: (coloring?.entries ?? []).filter((e) => used.has(e.key)),
       };
-      const stem = `${fileStem(title)}-graph`;
+      const stem = `${fileStem(title)}${selected ? `-${fileStem(nameOf(selected))}` : ""}-graph`;
+      if (kind === "viewer") {
+        setMermaidDoc({ text: buildMermaid(input), name: stem });
+        return;
+      }
       // Mermaid refuses big charts by default, so say so before someone pastes one.
       const tooBig =
-        visible.edges.length > MERMAID_MAX_EDGES
-          ? ` It has ${visible.edges.length.toLocaleString()} wires and Mermaid may refuse more than ` +
-            `${MERMAID_MAX_EDGES}; if it does not draw, close some folders and export again.`
+        scope.edges.length > MERMAID_MAX_EDGES
+          ? ` It has ${scope.edges.length.toLocaleString()} wires and Mermaid may refuse more than ` +
+            `${MERMAID_MAX_EDGES}; if it does not draw, zoom in or select a folder and export again.`
           : "";
       setExporting(true);
       setError(null);
@@ -355,7 +399,7 @@ export default function App() {
         if (kind === "mermaid") {
           saved = await saveFile(`${stem}.mmd`, new TextEncoder().encode(buildMermaid(input)));
         } else {
-          const { svg, width, height } = buildSvg(input, api.positions());
+          const { svg, width, height } = buildSvg(input, positions);
           const data = kind === "svg" ? new TextEncoder().encode(svg) : await svgToPng(svg, width, height);
           saved = await saveFile(`${stem}.${kind}`, data);
         }
@@ -366,7 +410,7 @@ export default function App() {
         setExporting(false);
       }
     },
-    [scan, view, visible, coloring, colorOf],
+    [scan, view, visible, selected, coloring, colorOf],
   );
 
   const viewProps = {
@@ -387,6 +431,17 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
+        {scan && (
+          <button
+            className="icon-btn"
+            title="Home: close this project and go back to the start page"
+            aria-label="Home"
+            disabled={scanning !== null}
+            onClick={goHome}
+          >
+            <House size={18} />
+          </button>
+        )}
         {scan && (
           <button
             className={sidebarOpen ? "icon-btn active" : "icon-btn"}
@@ -413,6 +468,14 @@ export default function App() {
           )}
         </div>
         <button
+          className={mermaidDoc ? "btn active" : "btn"}
+          onClick={() => setMermaidDoc((doc) => doc ?? mermaidDraft.current)}
+          title="Open the Mermaid viewer"
+        >
+          <Workflow size={16} />
+          Mermaid
+        </button>
+        <button
           className="btn"
           onClick={() => void chooseFolder()}
           disabled={scanning !== null}
@@ -435,7 +498,7 @@ export default function App() {
                 selected={selected}
                 focusRequest={focusRequest}
                 onToggle={toggleFolder}
-                onSelectFile={reveal}
+                onSelect={reveal}
                 onHover={setTreeHover}
                 onCollapseAll={collapseAll}
               />
@@ -516,14 +579,18 @@ export default function App() {
                 {selected && (
                   <button
                     className="icon-btn"
-                    title="Centre on the selected file"
+                    title="Centre on the selection"
                     onClick={() => graphApi.current?.centre()}
                   >
                     <Crosshair size={16} />
                   </button>
                 )}
                 <div className="controls-sep" />
-                <ExportMenu busy={exporting} onExport={(kind) => void runExport(kind)} />
+                <ExportMenu
+                  busy={exporting}
+                  selection={selected ? nameOf(selected) + (selected.endsWith("/") ? "/" : "") : null}
+                  onExport={(kind) => void runExport(kind)}
+                />
               </div>
               {coloring && (
                 <Legend
@@ -535,15 +602,27 @@ export default function App() {
                 />
               )}
             </main>
-            {selected && (
-              <FileDetails
-                scan={view}
-                path={selected}
-                onSelect={reveal}
-                onReveal={revealInFileManager}
-                onClose={() => setSelected(null)}
-              />
-            )}
+            {selected &&
+              (selected.endsWith("/") ? (
+                <FolderDetails
+                  scan={view}
+                  path={selected}
+                  color={colorOf(selected)}
+                  open={expanded.has(selected)}
+                  onSelect={reveal}
+                  onToggle={toggleFolder}
+                  onReveal={revealInFileManager}
+                  onClose={() => setSelected(null)}
+                />
+              ) : (
+                <FileDetails
+                  scan={view}
+                  path={selected}
+                  onSelect={reveal}
+                  onReveal={revealInFileManager}
+                  onClose={() => setSelected(null)}
+                />
+              ))}
           </>
         ) : (
           <Welcome
@@ -552,6 +631,19 @@ export default function App() {
             onOpen={() => void chooseFolder()}
             onOpenRecent={(path) => void openProject(path)}
             onForget={(path) => setRecent(forgetRecent(path))}
+            onOpenMermaid={() => setMermaidDoc(mermaidDraft.current)}
+          />
+        )}
+
+        {mermaidDoc && (
+          <MermaidViewer
+            initialText={mermaidDoc.text}
+            name={mermaidDoc.name}
+            onClose={(text, name) => {
+              mermaidDraft.current = { text, name };
+              setMermaidDoc(null);
+            }}
+            onNotice={setNotice}
           />
         )}
 
@@ -618,6 +710,12 @@ function initialExpansion(scan: ScanResult): Set<string> {
     if (nodes.length !== 1 || nodes[0].kind !== "folder") return expanded;
     expanded.add(nodes[0].id);
   }
+}
+
+/** Whether hiding tests, docs and examples hides this file, or every file in this folder. */
+function hidesAll(scan: ScanResult, id: string): boolean {
+  if (!id.endsWith("/")) return isNoise(id);
+  return !scan.files.some((f) => f.path.startsWith(id) && !isNoise(f.path));
 }
 
 /** A project name made safe to start a file name with. */
