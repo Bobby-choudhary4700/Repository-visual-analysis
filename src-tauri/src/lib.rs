@@ -2,13 +2,14 @@ mod export;
 mod project;
 pub mod scanner;
 mod watcher;
+mod windows;
 
 use std::path::PathBuf;
 
 use project::ProjectState;
 use scanner::ScanResult;
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{Manager, State, WindowEvent};
 use watcher::WatcherState;
 
 #[derive(Serialize)]
@@ -22,10 +23,12 @@ struct ScanResponse {
 
 /// Scans a project folder and returns its files plus the import wires between them.
 /// Runs on a blocking thread so the UI stays responsive on large repositories.
-/// With `watch`, the folder also becomes the open project and is watched for changes.
+/// With `watch`, the folder also becomes the calling window's open project and is
+/// watched for changes. Other windows keep their own projects.
 #[tauri::command]
 async fn scan_repository(
     app: tauri::AppHandle,
+    window: tauri::Window,
     watcher_state: State<'_, WatcherState>,
     project: State<'_, ProjectState>,
     path: String,
@@ -40,27 +43,40 @@ async fn scan_repository(
             .map_err(|e| e.to_string())?
     };
     let root = PathBuf::from(&scan.root);
+    let label = window.label();
     if watch {
-        project.set(root.clone());
+        project.set(label, root.clone());
+        let _ = window.set_title(&windows::title_for(&root));
         // A folder that cannot be watched is still worth showing, so this failure is not fatal.
-        if let Err(e) = watcher::watch(&app, &watcher_state, &root) {
+        if let Err(e) = watcher::watch(&app, &watcher_state, label, &root) {
             eprintln!("cannot watch {}: {e}", root.display());
-            watcher_state.stop();
+            watcher_state.stop(label);
         }
     }
     Ok(ScanResponse {
-        watching: watcher_state.is_active(),
+        watching: watcher_state.is_active(label),
         scan,
     })
 }
 
-/// Shows a file of the open project in the system file manager. Paths outside the
-/// project are refused. Files are never opened or run, only revealed.
+/// Shows a file of the window's open project in the system file manager. Paths outside
+/// the project are refused. Files are never opened or run, only revealed.
 #[tauri::command]
-fn reveal_in_file_manager(project: State<'_, ProjectState>, path: String) -> Result<(), String> {
-    let root = project.root().ok_or("no project is open")?;
+fn reveal_in_file_manager(
+    window: tauri::Window,
+    project: State<'_, ProjectState>,
+    path: String,
+) -> Result<(), String> {
+    let root = project.root(window.label()).ok_or("no project is open")?;
     let full = project::resolve_in_project(&root, &path)?;
     tauri_plugin_opener::reveal_item_in_dir(full).map_err(|e| e.to_string())
+}
+
+/// Opens another app window, so a second project can be analysed alongside this one.
+/// Async, because creating a window from a synchronous command deadlocks on Windows.
+#[tauri::command]
+async fn open_new_window(app: tauri::AppHandle) -> Result<(), String> {
+    windows::open(&app).map(|_| ()).map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -69,9 +85,18 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(WatcherState::default())
         .manage(ProjectState::default())
+        .on_window_event(|window, event| {
+            // A closed window's project is forgotten and no longer watched.
+            if let WindowEvent::Destroyed = event {
+                let label = window.label();
+                window.state::<WatcherState>().stop(label);
+                window.state::<ProjectState>().remove(label);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             scan_repository,
             reveal_in_file_manager,
+            open_new_window,
             export::save_export
         ])
         .run(tauri::generate_context!())
