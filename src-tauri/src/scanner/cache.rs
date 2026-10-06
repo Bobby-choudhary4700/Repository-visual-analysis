@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
 
@@ -47,9 +48,12 @@ pub fn save(dir: &Path, root: &Path, entries: HashMap<String, Entry>) -> std::io
         entries,
     };
     let bytes = serde_json::to_vec(&file).map_err(std::io::Error::other)?;
-    // Write then rename so a crash never leaves a half-written cache.
+    // Write then rename so a crash never leaves a half-written cache. The temporary
+    // name is unique, so two windows saving the same project's cache cannot mix writes.
+    static NEXT_TMP: AtomicUsize = AtomicUsize::new(0);
     let target = path_for(dir, root);
-    let tmp = target.with_extension("json.tmp");
+    let n = NEXT_TMP.fetch_add(1, Ordering::Relaxed);
+    let tmp = target.with_extension(format!("json.{}-{n}.tmp", std::process::id()));
     fs::write(&tmp, bytes)?;
     fs::rename(tmp, target)
 }

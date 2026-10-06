@@ -1,28 +1,30 @@
-//! Remembers the open project so the UI can show its files in the system file
-//! manager, without letting the UI reach any path outside it.
+//! Remembers the project open in each window so the UI can show its files in the
+//! system file manager, without letting the UI reach any path outside it.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+/// The open project of each window, by window label. Each window only reaches its own.
 #[derive(Default)]
-pub struct ProjectState(Mutex<Option<PathBuf>>);
+pub struct ProjectState(Mutex<HashMap<String, PathBuf>>);
 
 impl ProjectState {
-    pub fn set(&self, root: PathBuf) {
-        if let Ok(mut current) = self.0.lock() {
-            *current = Some(root);
+    pub fn set(&self, window: &str, root: PathBuf) {
+        if let Ok(mut open) = self.0.lock() {
+            open.insert(window.to_owned(), root);
         }
     }
 
-    /// Forgets the open project, so no path resolves until another one opens.
-    pub fn clear(&self) {
-        if let Ok(mut current) = self.0.lock() {
-            *current = None;
-        }
+    pub fn root(&self, window: &str) -> Option<PathBuf> {
+        self.0.lock().ok()?.get(window).cloned()
     }
 
-    pub fn root(&self) -> Option<PathBuf> {
-        self.0.lock().ok()?.clone()
+    /// Forgets a closed window's project.
+    pub fn remove(&self, window: &str) {
+        if let Ok(mut open) = self.0.lock() {
+            open.remove(window);
+        }
     }
 }
 
@@ -45,6 +47,19 @@ pub fn resolve_in_project(root: &Path, rel: &str) -> Result<PathBuf, String> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn each_window_keeps_its_own_project() {
+        let state = ProjectState::default();
+        state.set("main", PathBuf::from("/a"));
+        state.set("window-1", PathBuf::from("/b"));
+        assert_eq!(state.root("main"), Some(PathBuf::from("/a")));
+        assert_eq!(state.root("window-1"), Some(PathBuf::from("/b")));
+
+        state.remove("window-1");
+        assert_eq!(state.root("window-1"), None);
+        assert_eq!(state.root("main"), Some(PathBuf::from("/a")));
+    }
 
     #[test]
     fn only_paths_inside_the_project_resolve() {
