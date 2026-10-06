@@ -3,21 +3,40 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FolderOpen, LoaderCircle, PanelLeft, TriangleAlert, Upload, X } from "lucide-react";
-import { FOLDER_COLOR, fileColor, langLabel } from "./colors";
+import {
+  Crosshair,
+  FolderOpen,
+  LoaderCircle,
+  Maximize,
+  Orbit,
+  PanelLeft,
+  TriangleAlert,
+  Upload,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import { COLOR_MODES, makeColoring, projectColors, type ColorMode } from "./coloring";
+import { typeLabel } from "./colors";
 import { FileDetails } from "./FileDetails";
 import { ROOT, buildVisibleGraph, parentOf } from "./graph";
-import { GraphView, type GraphHandle, type NodeInfo } from "./GraphView";
+import { Graph3DView } from "./Graph3DView";
+import { GraphView, type GraphHandle } from "./GraphView";
 import { Legend } from "./Legend";
 import { Logo } from "./Logo";
-import { MOD_KEY } from "./platform";
+import { MOD_KEY, prefersReducedMotion } from "./platform";
 import { forgetRecent, loadRecent, rememberRecent } from "./recent";
 import { SearchBox } from "./SearchBox";
+import { loadChoice, loadFlag, saveSetting } from "./settings";
 import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
+import type { NodeInfo } from "./Tooltip";
 import { baseName, buildTreeIndex, nameOf } from "./tree";
 import type { ScanResponse, ScanResult } from "./types";
 import { Welcome } from "./Welcome";
+
+type ViewMode = "3d" | "2d";
+const VIEW_MODES: readonly ViewMode[] = ["3d", "2d"];
 
 export default function App() {
   const [scan, setScan] = useState<ScanResponse | null>(null);
@@ -31,6 +50,15 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [recent, setRecent] = useState<string[]>(loadRecent);
   const [dragging, setDragging] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => loadChoice("rva.viewMode", VIEW_MODES, "3d"));
+  const [colorMode, setColorMode] = useState<ColorMode>(() =>
+    loadChoice("rva.colorMode", COLOR_MODES.map((m) => m.id), "type"),
+  );
+  const [autoRotate, setAutoRotate] = useState(() => loadFlag("rva.autoRotate", false));
+  /** The 3D controls hint shows until the camera has been moved once. */
+  const [navHintSeen, setNavHintSeen] = useState(() => loadFlag("rva.navHintSeen", false));
+  /** The legend entry being pointed at, whose nodes stay lit. */
+  const [legendHover, setLegendHover] = useState<string | null>(null);
   const openPath = useRef<string | null>(null);
   const graphApi = useRef<GraphHandle | null>(null);
 
@@ -166,10 +194,18 @@ export default function App() {
       else if (key === "f" || e.key === "0") graphApi.current?.fit();
       else if (e.key === "+" || e.key === "=") graphApi.current?.zoomIn();
       else if (e.key === "-") graphApi.current?.zoomOut();
+      else if (key === "v") setViewMode((v) => (v === "3d" ? "2d" : "3d"));
+      else if (key === "r") setAutoRotate((on) => !on);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [chooseFolder]);
+
+  useEffect(() => saveSetting("rva.viewMode", viewMode), [viewMode]);
+  useEffect(() => saveSetting("rva.colorMode", colorMode), [colorMode]);
+  useEffect(() => saveSetting("rva.autoRotate", autoRotate), [autoRotate]);
+  useEffect(() => saveSetting("rva.navHintSeen", navHintSeen), [navHintSeen]);
+  const dismissNavHint = useCallback(() => setNavHintSeen(true), []);
 
   const tree = useMemo(() => (scan ? buildTreeIndex(scan.files) : null), [scan]);
 
@@ -177,12 +213,6 @@ export default function App() {
     () => (scan ? buildVisibleGraph(scan, expanded) : { nodes: [], edges: [] }),
     [scan, expanded],
   );
-
-  const langByPath = useMemo(
-    () => new Map(scan?.files.map((f) => [f.path, f.lang]) ?? []),
-    [scan],
-  );
-  const langOf = useCallback((id: string) => langByPath.get(id) ?? null, [langByPath]);
 
   // Wires in and out of each drawn node, counting every file-level import they stand for.
   const degree = useMemo(() => {
@@ -199,6 +229,22 @@ export default function App() {
     return counts;
   }, [visible]);
 
+  const project = useMemo(() => (scan && tree ? projectColors(scan.files, tree) : null), [scan, tree]);
+  // Only the links colouring depends on which folders are open.
+  const linkDegree = colorMode === "links" ? degree : null;
+  const coloring = useMemo(
+    () => (project ? makeColoring(project, colorMode, linkDegree ?? new Map()) : null),
+    [project, colorMode, linkDegree],
+  );
+  const colorOf = useCallback((id: string) => coloring?.colorOf(id) ?? "#5b6474", [coloring]);
+
+  // Pointing at a legend entry keeps its nodes lit and dims the rest.
+  const spotlight = useMemo(() => {
+    if (!legendHover || !coloring) return null;
+    return new Set(visible.nodes.filter((n) => coloring.keyOf(n.id) === legendHover).map((n) => n.id));
+  }, [legendHover, coloring, visible]);
+  useEffect(() => setLegendHover(null), [colorMode]);
+
   const describe = useCallback(
     (id: string): NodeInfo => {
       const d = degree.get(id) ?? { in: 0, out: 0 };
@@ -207,22 +253,38 @@ export default function App() {
         return {
           title: nameOf(id) + "/",
           path: id,
-          color: FOLDER_COLOR,
+          color: colorOf(id),
+          kind: "folder",
           detail: `${plural(files, "file")} · ${plural(d.out, "wire")} out · ${d.in} in`,
           hint: "Click to open this folder",
         };
       }
-      const lang = langByPath.get(id) ?? null;
       return {
         title: nameOf(id),
         path: id,
-        color: fileColor(lang),
-        detail: `${langLabel(lang)} · imports ${d.out} · imported by ${d.in}`,
+        color: colorOf(id),
+        kind: "file",
+        detail: `${typeLabel(id)} · imports ${d.out} · imported by ${d.in}`,
         hint: "Click to see its imports",
       };
     },
-    [degree, tree, langByPath],
+    [degree, tree, colorOf],
   );
+
+  const viewProps = {
+    nodes: visible.nodes,
+    edges: visible.edges,
+    colorOf,
+    selected,
+    focusRequest,
+    externalHover: treeHover,
+    spotlight,
+    describe,
+    apiRef: graphApi,
+    onExpand: expand,
+    onCollapse: collapse,
+    onSelect: setSelected,
+  };
 
   return (
     <div className="app">
@@ -267,6 +329,7 @@ export default function App() {
             {sidebarOpen && (
               <Sidebar
                 tree={tree}
+                colorOf={colorOf}
                 expanded={expanded}
                 selected={selected}
                 focusRequest={focusRequest}
@@ -276,23 +339,78 @@ export default function App() {
                 onCollapseAll={collapseAll}
               />
             )}
-            <main className="canvas">
+            <main className={viewMode === "3d" ? "canvas space" : "canvas"}>
               {/* A new project gets a fresh view: full layout, camera reset, fade in. */}
-              <GraphView
-                key={scan.root}
-                nodes={visible.nodes}
-                edges={visible.edges}
-                langOf={langOf}
-                selected={selected}
-                focusRequest={focusRequest}
-                externalHover={treeHover}
-                describe={describe}
-                apiRef={graphApi}
-                onExpand={expand}
-                onCollapse={collapse}
-                onSelect={setSelected}
-              />
-              <Legend files={scan.files} />
+              {viewMode === "3d" ? (
+                <Graph3DView
+                  key={scan.root}
+                  {...viewProps}
+                  autoRotate={autoRotate}
+                  onCameraStart={dismissNavHint}
+                />
+              ) : (
+                <GraphView key={scan.root} {...viewProps} />
+              )}
+              <div className="view-switch floating">
+                <div className="segmented" role="radiogroup" aria-label="View">
+                  {VIEW_MODES.map((mode) => (
+                    <button
+                      key={mode}
+                      role="radio"
+                      aria-checked={viewMode === mode}
+                      className={viewMode === mode ? "active" : undefined}
+                      title={mode === "3d" ? "Rotatable 3D view (V)" : "Flat 2D view (V)"}
+                      onClick={() => setViewMode(mode)}
+                    >
+                      {mode.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                {viewMode === "3d" && !prefersReducedMotion() && (
+                  <button
+                    className={autoRotate ? "icon-btn active" : "icon-btn"}
+                    title={autoRotate ? "Stop turning (R)" : "Turn slowly, like a globe (R)"}
+                    aria-pressed={autoRotate}
+                    onClick={() => setAutoRotate((on) => !on)}
+                  >
+                    <Orbit size={16} />
+                  </button>
+                )}
+              </div>
+              {viewMode === "3d" && !navHintSeen && (
+                <div className="nav-hint floating" role="note">
+                  Drag to turn · Scroll to zoom · Right-drag to move
+                </div>
+              )}
+              <div className="graph-controls floating">
+                <button className="icon-btn" title="Zoom in (+)" onClick={() => graphApi.current?.zoomIn()}>
+                  <ZoomIn size={16} />
+                </button>
+                <button className="icon-btn" title="Zoom out (−)" onClick={() => graphApi.current?.zoomOut()}>
+                  <ZoomOut size={16} />
+                </button>
+                <button className="icon-btn" title="Fit to screen (F)" onClick={() => graphApi.current?.fit()}>
+                  <Maximize size={16} />
+                </button>
+                {selected && (
+                  <button
+                    className="icon-btn"
+                    title="Centre on the selected file"
+                    onClick={() => graphApi.current?.centre()}
+                  >
+                    <Crosshair size={16} />
+                  </button>
+                )}
+              </div>
+              {coloring && (
+                <Legend
+                  coloring={coloring}
+                  view={viewMode}
+                  onMode={setColorMode}
+                  hovered={legendHover}
+                  onHover={setLegendHover}
+                />
+              )}
             </main>
             {selected && (
               <FileDetails

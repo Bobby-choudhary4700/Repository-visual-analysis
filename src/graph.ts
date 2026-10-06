@@ -77,3 +77,14 @@ export function buildVisibleGraph(
 
   return { nodes: [...nodes.values()], edges: [...edges.values()] };
 }
+
+/** A repeatable stream of numbers in [-1, 1) for one id, so a project lays out the same way every time. */
+export function seededRandom(id: string): () => number {
+  let seed = 2166136261;
+  for (let i = 0; i < id.length; i++) seed = Math.imul(seed ^ id.charCodeAt(i), 16777619);
+  seed >>>= 0;
+  return () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return (seed / 2 ** 32 - 0.5) * 2;
+  };
+}

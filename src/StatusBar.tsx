@@ -25,7 +25,7 @@ export function StatusBar({ scan, shown }: { scan: ScanResponse; shown: number }
         {stats.cached.toLocaleString()} from cache
       </span>
       <span className="keys">
-        <kbd>{MOD_KEY} K</kbd> find <kbd>F</kbd> fit <kbd>Esc</kbd> clear
+        <kbd>{MOD_KEY} K</kbd> find <kbd>F</kbd> fit <kbd>V</kbd> 2D/3D <kbd>Esc</kbd> clear
       </span>
     </footer>
   );

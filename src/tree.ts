@@ -1,5 +1,5 @@
 import { ROOT, parentOf } from "./graph";
-import type { FileNode, Lang } from "./types";
+import type { FileNode } from "./types";
 
 /** Folder structure of a scan, for the explorer. Folder ids end in `/`; the root is `""`. */
 export interface TreeIndex {
@@ -7,13 +7,11 @@ export interface TreeIndex {
   children: Map<string, { folders: string[]; files: string[] }>;
   /** Number of files anywhere under each folder. */
   fileCount: Map<string, number>;
-  lang: Map<string, Lang | null>;
 }
 
 export function buildTreeIndex(files: FileNode[]): TreeIndex {
   const children = new Map<string, { folders: string[]; files: string[] }>();
   const fileCount = new Map<string, number>();
-  const lang = new Map<string, Lang | null>();
   const entry = (id: string) => {
     let e = children.get(id);
     if (!e) children.set(id, (e = { folders: [], files: [] }));
@@ -23,7 +21,6 @@ export function buildTreeIndex(files: FileNode[]): TreeIndex {
   const listed = new Set<string>();
 
   for (const file of files) {
-    lang.set(file.path, file.lang);
     entry(parentOf(file.path)).files.push(file.path);
     // List each ancestor folder once under its own parent, and count the file in each.
     for (let dir = parentOf(file.path); dir !== ROOT; dir = parentOf(dir)) {
@@ -43,7 +40,7 @@ export function buildTreeIndex(files: FileNode[]): TreeIndex {
     e.folders.sort(byName);
     e.files.sort(byName);
   }
-  return { children, fileCount, lang };
+  return { children, fileCount };
 }
 
 /** Last path segment, without a folder's trailing `/`. */

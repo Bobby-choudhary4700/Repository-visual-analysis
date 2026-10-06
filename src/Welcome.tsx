@@ -1,5 +1,4 @@
 import { Folder, FolderOpen, Upload, X } from "lucide-react";
-import { FOLDER_COLOR } from "./colors";
 import { Logo } from "./Logo";
 import { MOD_KEY } from "./platform";
 import { baseName } from "./tree";
@@ -43,7 +42,7 @@ export function Welcome({ recent, busy, onOpen, onOpenRecent, onForget }: Props)
                     disabled={busy}
                     onClick={() => onOpenRecent(path)}
                   >
-                    <Folder size={16} color={FOLDER_COLOR} />
+                    <Folder size={16} className="recent-icon" />
                     <span className="recent-name">{baseName(path)}</span>
                     <span className="recent-path">{path}</span>
                   </button>
@@ -70,6 +69,9 @@ export function Welcome({ recent, busy, onOpen, onOpenRecent, onForget }: Props)
           </span>
           <span>
             <kbd>F</kbd> fit the graph
+          </span>
+          <span>
+            <kbd>V</kbd> switch 2D and 3D
           </span>
         </div>
       </div>
