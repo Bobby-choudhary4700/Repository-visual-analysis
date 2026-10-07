@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -37,8 +37,10 @@ import { Graph3DView } from "./Graph3DView";
 import { GraphView, type GraphHandle } from "./GraphView";
 import { AboutDialog, ShortcutsDialog } from "./InfoDialogs";
 import { Legend } from "./Legend";
-import { MermaidViewer } from "./MermaidViewer";
 import { mermaidSource } from "./mermaidRender";
+
+// The Mermaid viewer brings a code editor and sample diagrams, so it loads when first opened.
+const MermaidViewer = lazy(() => import("./MermaidViewer").then((m) => ({ default: m.MermaidViewer })));
 import { isNoise, withoutNoise } from "./noise";
 import { MOD_KEY, prefersReducedMotion } from "./platform";
 import { rankKeyFiles } from "./ranking";
@@ -885,14 +887,16 @@ export default function App() {
           )}
 
           {mermaidDoc && (
-            <MermaidViewer
-              key={mermaidDoc.rev ?? 0}
-              initialText={mermaidDoc.text}
-              name={mermaidDoc.name}
-              hidden={!mermaidShown}
-              onClose={() => setMermaidShown(false)}
-              onNotice={setNotice}
-            />
+            <Suspense fallback={null}>
+              <MermaidViewer
+                key={mermaidDoc.rev ?? 0}
+                initialText={mermaidDoc.text}
+                name={mermaidDoc.name}
+                hidden={!mermaidShown}
+                onClose={() => setMermaidShown(false)}
+                onNotice={setNotice}
+              />
+            </Suspense>
           )}
 
           {dialog === "settings" && (

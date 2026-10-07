@@ -46,6 +46,13 @@ look at it from any side, and a flat 2D view is one key away.
 - The **Export manager** (Export menu, or Ctrl+Shift+E) lists every graph and diagram saved,
   newest first and in every window, with **Show in folder**. Files are only shown in the
   file manager, never opened.
+- The **Mermaid viewer** (activity bar, or File > Open Mermaid) works like the
+  [Mermaid Live Editor](https://github.com/mermaid-js/mermaid-live-editor): a code editor
+  with line numbers and colours that marks the line Mermaid complains about, a **Config**
+  tab for Mermaid settings as JSON, **Sample diagrams** of every kind (pick a variant from
+  the arrow beside each), **Docs** for the kind of diagram open, and **Actions** to copy
+  the text, SVG or picture and set the PNG's width or height. The drawing sits on a dotted
+  grid (switch it off beside the zoom buttons) and pans and zooms with the mouse.
 - The window has its own **title bar** instead of the system frame: the app icon and the
   menus on the left, file search in the middle, and the explorer and details panel
   switches with minimize, maximize and close on the right. Drag its empty parts to move
@@ -139,6 +146,8 @@ src/                 React frontend
   SettingsDialog.tsx Settings; theme.ts applies the theme; InfoDialogs.tsx About and shortcuts
   TitleBar.tsx       the frameless window's title bar; MenuBar.tsx draws appMenu.ts's menus
   ActivityBar.tsx    the icon strip on the left edge
+  MermaidViewer.tsx  the Mermaid viewer: CodeEditor.tsx (CodeMirror, mermaidSyntax.ts),
+                     mermaidSamples.ts (samples, docs pages), mermaidRender.ts
   StatusBar.tsx, styles.css
 src-tauri/           Rust backend
   src/lib.rs         commands the frontend calls: scan_repository, reveal_in_file_manager

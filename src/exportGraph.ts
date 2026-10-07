@@ -303,9 +303,17 @@ function summary(input: ExportInput): string {
 const MAX_PNG_SIDE = 8192;
 const MAX_PNG_PIXELS = 40_000_000;
 
-/** Draws the SVG onto a canvas at twice its size (less for huge graphs) and encodes it as PNG. */
-export async function svgToPng(svg: string, width: number, height: number): Promise<Uint8Array<ArrayBuffer>> {
-  const scale = Math.min(2, MAX_PNG_SIDE / Math.max(width, height), Math.sqrt(MAX_PNG_PIXELS / (width * height)));
+/**
+ * Draws the SVG onto a canvas at `wantedScale` times its size (twice by default, less for
+ * huge graphs) and encodes it as PNG.
+ */
+export async function svgToPng(
+  svg: string,
+  width: number,
+  height: number,
+  wantedScale = 2,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const scale = Math.min(wantedScale, MAX_PNG_SIDE / Math.max(width, height), Math.sqrt(MAX_PNG_PIXELS / (width * height)));
   const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
   try {
     const image = new Image();
