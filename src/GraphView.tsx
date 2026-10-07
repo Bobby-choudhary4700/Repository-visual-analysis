@@ -5,12 +5,12 @@ import { createNodeBorderProgram } from "@sigma/node-border";
 import { EdgeArrowProgram } from "sigma/rendering";
 import type { Settings } from "sigma/settings";
 import type { NodeDisplayData, PartialButFor } from "sigma/types";
-import { LoaderCircle } from "lucide-react";
 import { BACKGROUND } from "./colors";
 import { ROOT, parentOf, seededRandom, type VisibleEdge, type VisibleNode } from "./graph";
 import type { ScreenPositions } from "./exportGraph";
 import { animatePositions, computeLayout } from "./layout";
 import { prefersReducedMotion } from "./platform";
+import { NodeLoader } from "./NodeLoader";
 import { NodeTooltip, type NodeInfo } from "./Tooltip";
 
 const EDGE_COLOR = "#3b4a61";
@@ -384,7 +384,7 @@ export function GraphView({
       />
       {arranging !== null && (
         <div className="arranging floating" role="status">
-          <LoaderCircle size={14} className="spin" />
+          <NodeLoader size={18} />
           Arranging {arranging.toLocaleString()} nodes…
         </div>
       )}

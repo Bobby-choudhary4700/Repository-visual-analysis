@@ -3,7 +3,6 @@ import {
   FileCode2,
   FileImage,
   FileUp,
-  LoaderCircle,
   Maximize,
   Save,
   Sparkles,
@@ -15,6 +14,7 @@ import {
 } from "lucide-react";
 import { svgToPng } from "./exportGraph";
 import { mermaidSource, renderMermaid, type MermaidTheme, type RenderedDiagram } from "./mermaidRender";
+import { NodeLoader } from "./NodeLoader";
 import { saveFile } from "./saveFile";
 import { loadChoice, saveSetting } from "./settings";
 
@@ -307,7 +307,7 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
           )}
           {drawing && (
             <div className="mv-drawing" role="status">
-              <LoaderCircle size={14} className="spin" />
+              <NodeLoader size={16} />
               Drawing…
             </div>
           )}

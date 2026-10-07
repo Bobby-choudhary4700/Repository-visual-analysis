@@ -141,16 +141,6 @@ kbd {
   margin-top: 5px;
 }
 
-.spin {
-  animation: spin 0.9s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @keyframes rise {
   from {
     opacity: 0;
@@ -1560,6 +1550,10 @@ button:focus-visible {
   animation: fade 0.15s ease-out;
 }
 
+:root[data-theme="light"] .overlay {
+  background: rgb(244 246 250 / 70%);
+}
+
 @keyframes fade {
   from {
     opacity: 0;
@@ -1580,8 +1574,28 @@ button:focus-visible {
   text-align: center;
 }
 
-.overlay-card .spin {
-  color: var(--brand);
+/* The loading animation (NodeLoader.tsx). Its wires take the text colour. */
+.node-loader {
+  display: block;
+  flex: none;
+}
+
+.overlay-card.loading {
+  gap: 6px;
+  min-width: 300px;
+  padding: 20px 32px 24px;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgb(56 189 248 / 12%), transparent 65%),
+    var(--surface-raised);
+}
+
+.overlay-card.loading .node-loader {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+}
+
+.overlay-title {
+  font-size: 15px;
 }
 
 .overlay-card .muted {
