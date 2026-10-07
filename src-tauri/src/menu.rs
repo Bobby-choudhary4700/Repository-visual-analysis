@@ -24,7 +24,6 @@ const RECENT_PREFIX: &str = "recent:";
 
 const REPO_URL: &str = "https://github.com/Bobby-choudhary4700/Repository-visual-analysis";
 const ISSUES_URL: &str = "https://github.com/Bobby-choudhary4700/Repository-visual-analysis/issues";
-const MERMAID_DOCS_URL: &str = "https://mermaid.js.org/";
 
 /// The recent project folders the Open Recent items stand for, in menu order.
 #[derive(Default)]
@@ -221,7 +220,7 @@ pub fn handle(app: &AppHandle, id: &str) {
             w.set_fullscreen(!on)
         }),
         "github" | "report-issue" => {
-            if let Err(e) = open_link(id.to_owned(), None) {
+            if let Err(e) = open_link(id.to_owned()) {
                 eprintln!("{e}");
             }
             Ok(())
@@ -258,36 +257,16 @@ pub fn handle(app: &AppHandle, id: &str) {
     }
 }
 
-/// Opens one of the app's web pages in the browser: the project ("github"), its issue
-/// tracker ("report-issue"), or Mermaid's documentation ("mermaid-docs"), optionally at
-/// one syntax page such as `flowchart.html`. Only these fixed sites; files are never opened.
+/// Opens one of the app's web pages in the browser: the project ("github") or its issue
+/// tracker ("report-issue"). Only these fixed pages; files are never opened.
 #[tauri::command]
-pub fn open_link(which: String, page: Option<String>) -> Result<(), String> {
+pub fn open_link(which: String) -> Result<(), String> {
     let url = match which.as_str() {
-        "github" => REPO_URL.to_owned(),
-        "report-issue" => ISSUES_URL.to_owned(),
-        "mermaid-docs" => mermaid_docs_url(page.as_deref().unwrap_or(""))?,
+        "github" => REPO_URL,
+        "report-issue" => ISSUES_URL,
         _ => return Err(format!("no link called {which}")),
     };
-    tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|e| format!("cannot open {url}: {e}"))
-}
-
-/// A page under Mermaid's syntax docs. The page is a plain file name, so the link cannot
-/// leave the docs site.
-fn mermaid_docs_url(page: &str) -> Result<String, String> {
-    if page.is_empty() {
-        return Ok(format!("{MERMAID_DOCS_URL}intro/"));
-    }
-    let plain = page.strip_suffix(".html").is_some_and(|stem| {
-        !stem.is_empty()
-            && stem
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    });
-    if !plain {
-        return Err(format!("not a Mermaid docs page: {page}"));
-    }
-    Ok(format!("{MERMAID_DOCS_URL}syntax/{page}"))
+    tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| format!("cannot open {url}: {e}"))
 }
 
 /// Quits the app, closing every window: File > Exit in the UI's own menus.
@@ -385,31 +364,4 @@ fn find<R: Runtime>(items: &[MenuItemKind<R>], id: &str) -> Option<MenuItemKind<
 /// read it as a keyboard mnemonic.
 fn menu_label(path: &str) -> String {
     path.replace('&', "&&")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::mermaid_docs_url;
-
-    #[test]
-    fn mermaid_docs_stay_on_the_docs_site() {
-        assert_eq!(
-            mermaid_docs_url("").unwrap(),
-            "https://mermaid.js.org/intro/"
-        );
-        assert_eq!(
-            mermaid_docs_url("flowchart.html").unwrap(),
-            "https://mermaid.js.org/syntax/flowchart.html"
-        );
-        for bad in [
-            "../x.html",
-            "a/b.html",
-            "x",
-            ".html",
-            "https://evil.example/x.html",
-            "x.html?y",
-        ] {
-            assert!(mermaid_docs_url(bad).is_err(), "{bad}");
-        }
-    }
 }
