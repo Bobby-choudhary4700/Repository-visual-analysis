@@ -1766,27 +1766,275 @@ button:focus-visible {
   min-height: 0;
 }
 
-.mv-source {
-  flex: 0 0 clamp(240px, 32%, 520px);
-  padding: 14px;
-  border: none;
+/* The left column, after the Mermaid Live Editor: the code editor with its Config tab,
+   then the sample diagrams and the actions, each folding away. */
+.mv-side {
+  display: flex;
+  flex: 0 0 clamp(300px, 34%, 560px);
+  flex-direction: column;
+  min-width: 0;
   border-right: 1px solid var(--border);
-  outline: none;
-  resize: none;
   background: var(--surface);
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.55;
-  tab-size: 2;
 }
 
-.mv-source::placeholder {
-  color: var(--text-faint);
+.mv-editor-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 160px;
 }
 
-.mv-source:focus-visible {
+.mv-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  flex-shrink: 0;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mv-tab-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--danger-text);
+  vertical-align: 1px;
+}
+
+.mv-editor {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.mv-editor[hidden] {
+  display: none;
+}
+
+.code-editor {
+  position: absolute;
+  inset: 0;
+}
+
+.code-editor .cm-editor.cm-focused {
   box-shadow: inset 0 0 0 2px var(--brand);
+}
+
+.code-editor .cm-problem-line {
+  background: color-mix(in srgb, var(--danger-border) 45%, transparent);
+}
+
+/* Mermaid and JSON colours, from the app's palette. */
+.code-editor .tok-keyword {
+  color: #c084fc;
+}
+
+.code-editor .tok-strong {
+  font-weight: 700;
+}
+
+.code-editor .tok-string {
+  color: #86efac;
+}
+
+.code-editor .tok-operator {
+  color: #38bdf8;
+}
+
+.code-editor .tok-number {
+  color: #fdba74;
+}
+
+.code-editor .tok-propertyName {
+  color: #7dd3fc;
+}
+
+.code-editor .tok-comment {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.code-editor .tok-meta {
+  color: #f472b6;
+}
+
+.code-editor .tok-bool,
+.code-editor .tok-null {
+  color: #c084fc;
+}
+
+.code-editor .tok-punctuation,
+.code-editor .tok-bracket {
+  color: var(--text-muted);
+}
+
+:root[data-theme="light"] .code-editor .tok-keyword,
+:root[data-theme="light"] .code-editor .tok-bool,
+:root[data-theme="light"] .code-editor .tok-null {
+  color: #7c3aed;
+}
+
+:root[data-theme="light"] .code-editor .tok-string {
+  color: #15803d;
+}
+
+:root[data-theme="light"] .code-editor .tok-operator {
+  color: #0369a1;
+}
+
+:root[data-theme="light"] .code-editor .tok-number {
+  color: #c2410c;
+}
+
+:root[data-theme="light"] .code-editor .tok-propertyName {
+  color: #0e7490;
+}
+
+:root[data-theme="light"] .code-editor .tok-meta {
+  color: #be185d;
+}
+
+.mv-config-note {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mv-config-note.problem {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.mv-panel {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+}
+
+.mv-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mv-panel-head:hover {
+  color: var(--text);
+}
+
+.mv-panel-head span {
+  flex: 1;
+  text-align: left;
+}
+
+.mv-chevron {
+  transform: rotate(-90deg);
+  transition: transform 0.12s;
+}
+
+.mv-panel.open .mv-chevron {
+  transform: none;
+}
+
+.mv-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 188px;
+  overflow-y: auto;
+  padding: 2px 12px 12px;
+}
+
+.mv-sample {
+  position: relative;
+  display: flex;
+  flex-grow: 1;
+}
+
+.mv-sample > .btn:first-child {
+  flex-grow: 1;
+  justify-content: center;
+}
+
+.mv-sample > .btn:first-child:not(:last-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.mv-sample-more {
+  margin-left: -1px;
+  padding: 4px 5px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.mv-sample-menu {
+  position: fixed;
+  width: 280px;
+  min-width: 0;
+}
+
+.mv-sample-menu .mb-item {
+  padding-left: 10px;
+}
+
+.mv-actions {
+  display: grid;
+  gap: 8px;
+  padding: 2px 12px 12px;
+}
+
+.mv-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.mv-action-label {
+  width: 64px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mv-action-hint {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.mv-pixels {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mv-pixels input {
+  width: 76px;
+  padding: 3px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
 }
 
 .mv-preview {
@@ -1802,8 +2050,22 @@ button:focus-visible {
   cursor: grabbing;
 }
 
+.mv-preview.dark {
+  background-color: #0b1120;
+}
+
 .mv-preview.light {
-  background: #f8fafc;
+  background-color: #ffffff;
+}
+
+/* A dotted grid behind the drawing, as in the Mermaid Live Editor; it moves with the pan. */
+.mv-preview.grid {
+  background-image: radial-gradient(circle, rgb(148 163 184 / 22%) 1.5px, transparent 1.5px);
+  background-size: 24px 24px;
+}
+
+.mv-preview.light.grid {
+  background-image: radial-gradient(circle, rgb(100 116 139 / 28%) 1.5px, transparent 1.5px);
 }
 
 .mv-stage {
@@ -1813,6 +2075,19 @@ button:focus-visible {
   transform-origin: 0 0;
   line-height: 0;
   box-shadow: var(--shadow);
+}
+
+/* On the grid the drawing sits straight on the dots, as in the Mermaid Live Editor. */
+.mv-preview.grid .mv-stage {
+  box-shadow: none;
+}
+
+.mv-preview.grid .mv-stage > svg {
+  background: transparent !important;
+}
+
+.mv-preview.grid .mv-stage > svg > rect[data-background] {
+  display: none;
 }
 
 .mv-stage.stale {

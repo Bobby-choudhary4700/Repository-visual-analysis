@@ -1,4 +1,4 @@
-import type { Mermaid } from "mermaid";
+import type { Mermaid, MermaidConfig } from "mermaid";
 
 // Draws Mermaid text as a standalone SVG for the Mermaid viewer. Mermaid is large, so it
 // loads the first time the viewer draws something rather than with the app.
@@ -23,33 +23,41 @@ export interface RenderedDiagram {
   svg: string;
   width: number;
   height: number;
+  /** The kind of diagram as Mermaid detected it, such as `flowchart-v2` or `sequence`. */
+  diagramType: string;
 }
 
-export function renderMermaid(text: string, theme: MermaidTheme): Promise<RenderedDiagram> {
-  const run = queue.then(() => draw(text, theme));
+/**
+ * Draws `text` in `theme`. `config` holds the user's own Mermaid settings from the
+ * viewer's Config tab; it can pick another Mermaid theme or tune a diagram kind, but
+ * never loosen the security level or turn HTML labels back on.
+ */
+export function renderMermaid(text: string, theme: MermaidTheme, config: MermaidConfig = {}): Promise<RenderedDiagram> {
+  const run = queue.then(() => draw(text, theme, config));
   queue = run.catch(() => {});
   return run;
 }
 
-async function draw(text: string, theme: MermaidTheme): Promise<RenderedDiagram> {
+async function draw(text: string, theme: MermaidTheme, config: MermaidConfig): Promise<RenderedDiagram> {
   const mermaid = await loadMermaid();
   mermaid.initialize({
-    startOnLoad: false,
     theme: theme === "dark" ? "dark" : "default",
+    fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    ...config,
+    startOnLoad: false,
     // Text from a file is never trusted to run scripts or links.
     securityLevel: "strict",
     // Labels as SVG text rather than HTML, so the picture can be drawn onto a canvas for PNG.
     htmlLabels: false,
-    flowchart: { htmlLabels: false },
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    flowchart: { ...config.flowchart, htmlLabels: false },
     // The app's own exports of big projects pass Mermaid's default limits.
     maxTextSize: 2_000_000,
     maxEdges: 10_000,
   });
   const id = `mermaid-view-${++counter}`;
   try {
-    const { svg } = await mermaid.render(id, text);
-    return standalone(svg, THEME_BACKGROUND[theme]);
+    const { svg, diagramType } = await mermaid.render(id, text);
+    return { ...standalone(svg, THEME_BACKGROUND[theme]), diagramType };
   } finally {
     // A failed draw can leave its scratch element behind.
     document.getElementById(id)?.remove();
@@ -58,7 +66,7 @@ async function draw(text: string, theme: MermaidTheme): Promise<RenderedDiagram>
 }
 
 /** Gives the SVG a fixed size (Mermaid sizes it to its container) and a background. */
-function standalone(markup: string, background: string): RenderedDiagram {
+function standalone(markup: string, background: string): Omit<RenderedDiagram, "diagramType"> {
   const doc = new DOMParser().parseFromString(markup, "text/html");
   const svg = doc.querySelector("svg");
   if (!svg) throw new Error("Mermaid did not draw a picture");
@@ -74,6 +82,8 @@ function standalone(markup: string, background: string): RenderedDiagram {
   rect.setAttribute("width", String(width));
   rect.setAttribute("height", String(height));
   rect.setAttribute("fill", background);
+  // Lets the viewer show the drawing straight on its grid; saved files keep the background.
+  rect.setAttribute("data-background", "");
   svg.insertBefore(rect, svg.firstChild);
   return { svg: new XMLSerializer().serializeToString(svg), width: Math.ceil(width), height: Math.ceil(height) };
 }
@@ -83,4 +93,10 @@ export function mermaidSource(text: string, fileName: string): string {
   if (!/\.(md|markdown)$/i.test(fileName)) return text;
   const block = /```mermaid[^\n]*\n([\s\S]*?)```/.exec(text);
   return block ? block[1] : text;
+}
+
+/** The 1-based line a Mermaid error points at, such as "Parse error on line 4", if any. */
+export function problemLine(message: string): number | null {
+  const match = /\bline (\d+)/i.exec(message);
+  return match ? Number(match[1]) : null;
 }
