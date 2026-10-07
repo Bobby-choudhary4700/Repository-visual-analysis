@@ -1,42 +1,22 @@
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type MouseEvent as ReactMouseEvent,
-  type PointerEvent,
-} from "react";
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { MermaidConfig } from "mermaid";
-import {
-  BookOpen,
-  ChevronDown,
-  ClipboardCopy,
   FileCode2,
   FileImage,
   FileUp,
-  Grid3x3,
   Maximize,
   Save,
-  Shapes,
   Sparkles,
-  SquareArrowOutUpRight,
   TriangleAlert,
   Workflow,
   X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { CodeEditor } from "./CodeEditor";
 import { svgToPng } from "./exportGraph";
-import { DOCS_BASE, SAMPLE_DIAGRAMS, docsPage, type SampleDiagram } from "./mermaidSamples";
-import { mermaidSource, problemLine, renderMermaid, type MermaidTheme, type RenderedDiagram } from "./mermaidRender";
+import { mermaidSource, renderMermaid, type MermaidTheme, type RenderedDiagram } from "./mermaidRender";
 import { NodeLoader } from "./NodeLoader";
 import { saveFile } from "./saveFile";
-import { loadChoice, loadFlag, saveSetting } from "./settings";
+import { loadChoice, saveSetting } from "./settings";
 
 interface Props {
   initialText: string;
@@ -70,48 +50,10 @@ const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 8;
 
 type View = { x: number; y: number; k: number };
-type Tab = "code" | "config";
-type PngSize = "auto" | "width" | "height";
-const PNG_SIZES: { id: PngSize; label: string }[] = [
-  { id: "auto", label: "Auto" },
-  { id: "width", label: "Width" },
-  { id: "height", label: "Height" },
-];
-
-const DEFAULT_CONFIG = "{\n  \n}\n";
-
-function loadText(key: string, fallback: string): string {
-  try {
-    return localStorage.getItem(key) ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-/** Reads the Config tab: Mermaid settings as a JSON object, or what is wrong with it. */
-function readConfig(text: string): { config: MermaidConfig } | { problem: string; line: number | null } {
-  if (!text.trim()) return { config: {} };
-  try {
-    const value: unknown = JSON.parse(text);
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
-      return { problem: "The config must be a JSON object, like { \"theme\": \"forest\" }.", line: 1 };
-    }
-    return { config: value as MermaidConfig };
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    const at = /line (\d+)/.exec(message);
-    const position = /position (\d+)/.exec(message);
-    const line = at ? Number(at[1]) : position ? text.slice(0, Number(position[1])).split("\n").length : null;
-    return { problem: `The config is not valid JSON: ${message}`, line };
-  }
-}
 
 /**
  * Shows a Mermaid diagram next to its text, redrawn as the text changes, and saves it as
- * SVG, PNG or .mmd. The text can come from the graph's export, a file, a sample, or
- * typing. Its working parts follow the Mermaid Live Editor
- * (https://github.com/mermaid-js/mermaid-live-editor): a code editor with a Config tab,
- * sample diagrams, copy and export actions, and a dotted grid behind the drawing.
+ * SVG, PNG or .mmd. The text can come from the graph's export, a file, or typing.
  */
 export function MermaidViewer({ initialText, name: initialName, onClose, onNotice, hidden = false }: Props) {
   const [text, setText] = useState(initialText);
@@ -124,36 +66,14 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
   const [drawing, setDrawing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
-  const [tab, setTab] = useState<Tab>("code");
-  const [configText, setConfigText] = useState(() => loadText("rva.mermaidConfig", DEFAULT_CONFIG));
-  const [showGrid, setShowGrid] = useState(() => loadFlag("rva.mermaidGrid", true));
-  const [samplesOpen, setSamplesOpen] = useState(() => loadFlag("rva.mermaidSamplesOpen", true));
-  const [actionsOpen, setActionsOpen] = useState(() => loadFlag("rva.mermaidActionsOpen", false));
-  /** The sample whose examples list is open, and where the list goes on screen. */
-  const [examplesMenu, setExamplesMenu] = useState<{ name: string; style: CSSProperties } | null>(null);
-  const examplesOf = examplesMenu?.name ?? null;
-  const [pngSize, setPngSize] = useState<PngSize>(() => loadChoice("rva.mermaidPngSize", PNG_SIZES.map((p) => p.id), "auto"));
-  const [pngPixels, setPngPixels] = useState(() => Number(loadText("rva.mermaidPngPixels", "1920")) || 1920);
   const previewRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const sideRef = useRef<HTMLElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
   /** The next drawing is framed to fit, as for a newly opened diagram. */
   const fitNextRef = useRef(true);
   const dragRef = useRef<{ x: number; y: number; view: View } | null>(null);
 
   useEffect(() => saveSetting("rva.mermaidTheme", theme), [theme]);
-  useEffect(() => saveSetting("rva.mermaidConfig", configText), [configText]);
-  useEffect(() => saveSetting("rva.mermaidGrid", showGrid), [showGrid]);
-  useEffect(() => saveSetting("rva.mermaidSamplesOpen", samplesOpen), [samplesOpen]);
-  useEffect(() => saveSetting("rva.mermaidActionsOpen", actionsOpen), [actionsOpen]);
-  useEffect(() => saveSetting("rva.mermaidPngSize", pngSize), [pngSize]);
-  useEffect(() => saveSetting("rva.mermaidPngPixels", String(pngPixels)), [pngPixels]);
-
-  const configRead = useMemo(() => readConfig(configText), [configText]);
-  // While the config has a mistake, diagrams keep the last settings that worked.
-  const lastConfigRef = useRef<MermaidConfig>({});
-  if ("config" in configRead) lastConfigRef.current = configRead.config;
-  const configKey = JSON.stringify(lastConfigRef.current);
 
   // Redraw shortly after the text or theme changes; only the latest drawing is kept.
   useEffect(() => {
@@ -166,7 +86,7 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
     let cancelled = false;
     setDrawing(true);
     const timer = window.setTimeout(() => {
-      renderMermaid(text, theme, JSON.parse(configKey) as MermaidConfig)
+      renderMermaid(text, theme)
         .then((result) => {
           if (cancelled) return;
           setDiagram(result);
@@ -183,7 +103,7 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [text, theme, configKey]);
+  }, [text, theme]);
 
   const fit = useCallback(() => {
     const preview = previewRef.current;
@@ -237,103 +157,22 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
 
   const close = onClose;
 
-  // Escape closes the viewer, or first closes a samples list or leaves the editor.
+  // Escape closes the viewer, or first leaves the text box.
   useEffect(() => {
     if (hidden) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      const active = document.activeElement;
-      if (examplesOf) setExamplesMenu(null);
-      else if (active instanceof HTMLElement && sideRef.current?.contains(active)) active.blur();
+      if (document.activeElement === textRef.current) textRef.current?.blur();
       else close();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [close, hidden, examplesOf]);
-
-  // A samples list closes when anything else is clicked, or when what it hangs from moves.
-  useEffect(() => {
-    if (!examplesOf) return;
-    const onDown = (e: Event) => {
-      if (!(e.target as HTMLElement).closest(".mv-sample")) setExamplesMenu(null);
-    };
-    const onMove = () => setExamplesMenu(null);
-    window.addEventListener("pointerdown", onDown);
-    window.addEventListener("resize", onMove);
-    window.addEventListener("scroll", onMove, true);
-    return () => {
-      window.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("resize", onMove);
-      window.removeEventListener("scroll", onMove, true);
-    };
-  }, [examplesOf]);
+  }, [close, hidden]);
 
   const load = (next: string, nextName: string) => {
     fitNextRef.current = true;
     setText(next);
     setName(nextName);
-  };
-
-  const loadSample = (sample: SampleDiagram, index = 0) => {
-    const example = sample.examples[index];
-    setExamplesMenu(null);
-    setTab("code");
-    load(example.code.endsWith("\n") ? example.code : example.code + "\n", slug(`${sample.name} ${index ? example.title : ""}`));
-  };
-
-  /**
-   * Opens or closes a sample's list of examples. The samples scroll, so the list is placed
-   * on screen beside its button rather than inside them, opening upwards near the bottom.
-   */
-  const toggleExamples = (sample: SampleDiagram, e: ReactMouseEvent<HTMLButtonElement>) => {
-    if (examplesOf === sample.name) return setExamplesMenu(null);
-    const button = e.currentTarget.getBoundingClientRect();
-    const height = sample.examples.length * 30 + 10;
-    const style: CSSProperties = { left: Math.max(8, button.right - 280) };
-    if (button.bottom + 4 + height > window.innerHeight - 8) style.bottom = window.innerHeight - button.top + 4;
-    else style.top = button.bottom + 4;
-    setExamplesMenu({ name: sample.name, style });
-  };
-
-  /** The PNG's scale for the chosen size: twice the drawing, or a set width or height. */
-  const pngScale = (d: RenderedDiagram) => {
-    const pixels = Math.min(Math.max(pngPixels, 16), 8192);
-    if (pngSize === "width") return pixels / d.width;
-    if (pngSize === "height") return pixels / d.height;
-    return 2;
-  };
-
-  const copy = async (kind: "text" | "svg" | "png") => {
-    try {
-      if (kind === "text") {
-        await navigator.clipboard.writeText(text);
-        onNotice("Copied the Mermaid text.");
-        return;
-      }
-      if (!diagram) return;
-      if (kind === "svg") {
-        await navigator.clipboard.writeText(diagram.svg);
-        onNotice("Copied the SVG.");
-        return;
-      }
-      const png = svgToPng(diagram.svg, diagram.width, diagram.height, pngScale(diagram)).then(
-        (data) => new Blob([data], { type: "image/png" }),
-      );
-      // The picture is handed over as a promise so the copy still counts as the click's.
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
-      onNotice("Copied the picture.");
-    } catch (e) {
-      setProblem(`Could not copy: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
-
-  const openDocs = () => {
-    const page = docsPage(diagram?.diagramType);
-    if (isTauri()) {
-      void invoke("open_link", { which: "mermaid-docs", page }).catch((e) => setProblem(String(e)));
-    } else {
-      window.open(page ? `${DOCS_BASE}syntax/${page}` : `${DOCS_BASE}intro/`, "_blank", "noopener");
-    }
   };
 
   const openFile = async (file: File) => {
@@ -351,7 +190,7 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
       if (kind === "mmd") data = new TextEncoder().encode(text.endsWith("\n") ? text : text + "\n");
       else if (!diagram) return;
       else if (kind === "svg") data = new TextEncoder().encode(diagram.svg);
-      else data = await svgToPng(diagram.svg, diagram.width, diagram.height, pngScale(diagram));
+      else data = await svgToPng(diagram.svg, diagram.width, diagram.height);
       const saved = await saveFile(`${name}.${kind}`, data);
       if (saved) onNotice(`Saved ${saved}.`);
     } catch (e) {
@@ -376,8 +215,6 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
   };
 
   const stale = problem !== null && diagram !== null;
-  const configProblem = "problem" in configRead ? configRead : null;
-  const codeProblemLine = problem ? problemLine(problem) : null;
 
   return (
     <section className="mermaid-viewer" role="dialog" aria-label="Mermaid viewer" hidden={hidden}>
@@ -436,176 +273,17 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
         </button>
       </div>
       <div className="mv-body">
-        <aside className="mv-side" ref={sideRef}>
-          <div className="mv-editor-pane">
-            <div className="mv-pane-head">
-              <div className="segmented" role="tablist" aria-label="Editor">
-                {(["code", "config"] as const).map((id) => (
-                  <button
-                    key={id}
-                    role="tab"
-                    aria-selected={tab === id}
-                    className={tab === id ? "active" : undefined}
-                    onClick={() => setTab(id)}
-                  >
-                    {id === "code" ? "Code" : "Config"}
-                    {id === "config" && configProblem && <span className="mv-tab-dot" aria-label="has a problem" />}
-                  </button>
-                ))}
-              </div>
-              <div className="mv-spacer" />
-              <button className="btn small" onClick={openDocs} title="Mermaid's documentation for this kind of diagram">
-                <BookOpen size={14} />
-                Docs
-              </button>
-            </div>
-            <div className="mv-editor" hidden={tab !== "code"}>
-              <CodeEditor
-                language="mermaid"
-                value={text}
-                onChange={setText}
-                problemLine={codeProblemLine}
-                ariaLabel="Mermaid text"
-                placeholder={"Paste or type a Mermaid diagram, for example:\n\nflowchart LR\n  A --> B"}
-              />
-            </div>
-            <div className="mv-editor" hidden={tab !== "config"}>
-              <CodeEditor
-                language="json"
-                value={configText}
-                onChange={setConfigText}
-                problemLine={configProblem?.line ?? null}
-                ariaLabel="Mermaid config"
-              />
-            </div>
-            {tab === "config" && (
-              <p className={configProblem ? "mv-config-note problem" : "mv-config-note"}>
-                {configProblem
-                  ? configProblem.problem
-                  : 'Mermaid settings as JSON, for example { "theme": "forest", "flowchart": { "curve": "basis" } }. They apply on top of the Dark or Light switch.'}
-              </p>
-            )}
-          </div>
-
-          <section className={samplesOpen ? "mv-panel open" : "mv-panel"}>
-            <button className="mv-panel-head" aria-expanded={samplesOpen} onClick={() => setSamplesOpen((o) => !o)}>
-              <Shapes size={15} />
-              <span>Sample diagrams</span>
-              <ChevronDown size={15} className="mv-chevron" />
-            </button>
-            {samplesOpen && (
-              <div className="mv-samples">
-                {SAMPLE_DIAGRAMS.map((sample) => (
-                  <div className="mv-sample" key={sample.name}>
-                    <button
-                      className="btn small"
-                      onClick={() => loadSample(sample)}
-                      title={`Load a ${sample.name.toLowerCase()} example`}
-                    >
-                      {sample.name}
-                    </button>
-                    {sample.examples.length > 1 && (
-                      <button
-                        className="btn small mv-sample-more"
-                        aria-label={`More ${sample.name} examples`}
-                        aria-expanded={examplesOf === sample.name}
-                        onClick={(e) => toggleExamples(sample, e)}
-                      >
-                        <ChevronDown size={13} />
-                      </button>
-                    )}
-                    {examplesOf === sample.name && (
-                      <div className="mb-menu mv-sample-menu" role="menu" style={examplesMenu?.style}>
-                        {sample.examples.map((example, i) => (
-                          <button key={example.title} className="mb-item" role="menuitem" onClick={() => loadSample(sample, i)}>
-                            <span className="mb-label">{example.title}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className={actionsOpen ? "mv-panel open" : "mv-panel"}>
-            <button className="mv-panel-head" aria-expanded={actionsOpen} onClick={() => setActionsOpen((o) => !o)}>
-              <SquareArrowOutUpRight size={15} />
-              <span>Actions</span>
-              <ChevronDown size={15} className="mv-chevron" />
-            </button>
-            {actionsOpen && (
-              <div className="mv-actions">
-                <div className="mv-action-row">
-                  <span className="mv-action-label">Copy</span>
-                  <button className="btn small" disabled={!text.trim()} onClick={() => void copy("text")}>
-                    <ClipboardCopy size={14} />
-                    Mermaid text
-                  </button>
-                  <button className="btn small" disabled={!diagram} onClick={() => void copy("svg")}>
-                    <FileCode2 size={14} />
-                    SVG
-                  </button>
-                  <button className="btn small" disabled={!diagram} onClick={() => void copy("png")}>
-                    <FileImage size={14} />
-                    Picture
-                  </button>
-                </div>
-                <div className="mv-action-row">
-                  <span className="mv-action-label">PNG size</span>
-                  <div className="segmented" role="radiogroup" aria-label="PNG size">
-                    {PNG_SIZES.map(({ id, label }) => (
-                      <button
-                        key={id}
-                        role="radio"
-                        aria-checked={pngSize === id}
-                        className={pngSize === id ? "active" : undefined}
-                        onClick={() => setPngSize(id)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  {pngSize === "auto" ? (
-                    <span className="mv-action-hint">Twice the drawing's size</span>
-                  ) : (
-                    <label className="mv-pixels">
-                      <input
-                        type="number"
-                        min={16}
-                        max={8192}
-                        step={10}
-                        value={pngPixels}
-                        aria-label={`PNG ${pngSize} in pixels`}
-                        onChange={(e) => setPngPixels(Number(e.target.value))}
-                      />
-                      px
-                    </label>
-                  )}
-                </div>
-                <div className="mv-action-row">
-                  <span className="mv-action-label">Save</span>
-                  <button className="btn small" disabled={saving || !text.trim()} onClick={() => void save("mmd")}>
-                    <Save size={14} />
-                    .mmd
-                  </button>
-                  <button className="btn small" disabled={saving || !diagram} onClick={() => void save("svg")}>
-                    <FileCode2 size={14} />
-                    SVG
-                  </button>
-                  <button className="btn small" disabled={saving || !diagram} onClick={() => void save("png")}>
-                    <FileImage size={14} />
-                    PNG
-                  </button>
-                </div>
-              </div>
-            )}
-          </section>
-        </aside>
+        <textarea
+          ref={textRef}
+          className="mv-source"
+          value={text}
+          spellCheck={false}
+          aria-label="Mermaid text"
+          placeholder={"Paste or type a Mermaid diagram, for example:\n\nflowchart LR\n  A --> B"}
+          onChange={(e) => setText(e.target.value)}
+        />
         <div
-          className={`mv-preview ${theme}${showGrid ? " grid" : ""}`}
-          style={showGrid ? { backgroundPosition: `${view.x}px ${view.y}px` } : undefined}
+          className={`mv-preview ${theme}`}
           ref={previewRef}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -624,7 +302,7 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
           {!text.trim() && (
             <div className="mv-empty">
               <Workflow size={28} />
-              <p>Type Mermaid text on the left, pick a sample diagram, open a .mmd file, or export the graph to here.</p>
+              <p>Paste Mermaid text on the left, open a .mmd file, or export the graph to here.</p>
             </div>
           )}
           {drawing && (
@@ -641,14 +319,6 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
           )}
           {diagram && (
             <div className="mv-zoom">
-              <button
-                className={showGrid ? "icon-btn active" : "icon-btn"}
-                title={showGrid ? "Hide the grid" : "Show the grid"}
-                aria-pressed={showGrid}
-                onClick={() => setShowGrid((g) => !g)}
-              >
-                <Grid3x3 size={16} />
-              </button>
               <button className="icon-btn" title="Zoom in" onClick={() => zoomAt(1.25)}>
                 <ZoomIn size={16} />
               </button>
@@ -664,9 +334,4 @@ export function MermaidViewer({ initialText, name: initialName, onClose, onNotic
       </div>
     </section>
   );
-}
-
-/** A file name stem from a sample's name, such as `entity-relationship`. */
-function slug(text: string): string {
-  return text.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "diagram";
 }
